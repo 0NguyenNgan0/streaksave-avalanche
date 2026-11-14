@@ -1,0 +1,33 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+.next/
+dist/
+build/
+
+# Foundry
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Secrets
+*.key
+*.pem
+
+# TypeScript build cache
+*.tsbuildinfo
