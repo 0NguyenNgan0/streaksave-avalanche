@@ -1,9 +1,11 @@
 # TS-02 — `StreakSavings.sol` Technical Design (Draft)
 
-**Status:** Design only — no `StreakSavings.sol` code is implemented on 15/11/2026.
+**Status:** Design only — no `StreakSavings.sol` reward or streak code is implemented on 15/11/2026.
 **Author:** Member A (Smart Contract / Blockchain)
 **Date:** 15/11/2026
 **Sources:** Team Dimple MVP Execution Plan v3, §3, §4, §16; TS-02 task brief.
+
+**Update 16/11/2026:** principal accounting is implemented in `contracts/src/StreakSavings.sol`. Streak and reward layers remain blocked on the decisions in `docs/BL-DECISIONS-PROPOSAL.md`.
 
 Labels used below:
 
