@@ -4,6 +4,7 @@ pragma solidity 0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {MockUSDC} from "../src/MockUSDC.sol";
 import {StreakSavings} from "../src/StreakSavings.sol";
 
@@ -25,6 +26,35 @@ contract FeeOnTransferToken is ERC20 {
         uint256 fee = value / 100;
         super._update(from, address(0), fee);
         super._update(from, to, value - fee);
+    }
+}
+
+/// @dev Test-only token that calls back into StreakSavings during a transfer,
+///      used to prove that the reentrancy guard blocks nested deposits/withdrawals.
+contract ReentrantToken is ERC20 {
+    StreakSavings private target;
+    bool private reentryEnabled;
+
+    constructor() ERC20("Reentrant Token", "RE") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function setTarget(StreakSavings target_) external {
+        target = target_;
+    }
+
+    function setReentryEnabled(bool enabled) external {
+        reentryEnabled = enabled;
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (reentryEnabled && from != address(0) && to != address(0)) {
+            reentryEnabled = false;
+            target.deposit(1);
+        }
+        super._update(from, to, value);
     }
 }
 
@@ -283,6 +313,49 @@ contract StreakSavingsTest is Test {
         assertEq(feeSavings.totalPrincipal(), 0);
         assertEq(feeSavings.principalOf(alice), 0);
         assertEq(feeToken.balanceOf(address(feeSavings)), 0);
+    }
+
+    // ---------------------------------------------------------------------
+    // Reentrancy protection
+    // ---------------------------------------------------------------------
+
+    function test_RevertWhen_DepositReenters() public {
+        ReentrantToken reentrantToken = new ReentrantToken();
+        StreakSavings reentrantSavings = new StreakSavings(IERC20(address(reentrantToken)));
+
+        reentrantToken.setTarget(reentrantSavings);
+        reentrantToken.mint(alice, 10 * ONE_USDC);
+        vm.prank(alice);
+        reentrantToken.approve(address(reentrantSavings), type(uint256).max);
+        reentrantToken.setReentryEnabled(true);
+
+        vm.prank(alice);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        reentrantSavings.deposit(ONE_USDC);
+
+        assertEq(reentrantSavings.totalPrincipal(), 0);
+    }
+
+    function test_RevertWhen_WithdrawReenters() public {
+        ReentrantToken reentrantToken = new ReentrantToken();
+        StreakSavings reentrantSavings = new StreakSavings(IERC20(address(reentrantToken)));
+
+        reentrantToken.setTarget(reentrantSavings);
+        reentrantToken.mint(alice, 10 * ONE_USDC);
+        vm.prank(alice);
+        reentrantToken.approve(address(reentrantSavings), type(uint256).max);
+
+        vm.prank(alice);
+        reentrantSavings.deposit(5 * ONE_USDC);
+
+        reentrantToken.setReentryEnabled(true);
+
+        vm.prank(alice);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        reentrantSavings.withdraw(ONE_USDC);
+
+        assertEq(reentrantSavings.principalOf(alice), 5 * ONE_USDC);
+        assertEq(reentrantSavings.totalPrincipal(), 5 * ONE_USDC);
     }
 
     // ---------------------------------------------------------------------
