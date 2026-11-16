@@ -8,3 +8,7 @@ solc_version = "0.8.24"
 evm_version = "shanghai"
 optimizer = true
 optimizer_runs = 200
+
+[fmt]
+# Dependencies are vendored/installed code; do not reformat them or fail CI on their style.
+ignore = ["lib/**", "node_modules/**"]
