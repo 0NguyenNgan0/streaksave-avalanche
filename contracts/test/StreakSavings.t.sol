@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {MockUSDC} from "../src/MockUSDC.sol";
 import {StreakSavings} from "../src/StreakSavings.sol";
 
@@ -64,6 +65,8 @@ contract StreakSavingsTest is Test {
 
     uint256 private constant ONE_USDC = 1e6;
     uint256 private constant USER_FUNDS = 10_000 * ONE_USDC;
+    uint64 private constant DEFAULT_EPOCH_DURATION = 60;
+    uint64 private constant PROD_EPOCH_DURATION = 7 days;
 
     MockUSDC private usdc;
     StreakSavings private savings;
@@ -74,7 +77,7 @@ contract StreakSavingsTest is Test {
 
     function setUp() public {
         usdc = new MockUSDC();
-        savings = new StreakSavings(IERC20(address(usdc)));
+        savings = new StreakSavings(IERC20(address(usdc)), DEFAULT_EPOCH_DURATION);
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
@@ -108,6 +111,8 @@ contract StreakSavingsTest is Test {
 
     function test_InitialState() public view {
         assertEq(address(savings.usdc()), address(usdc));
+        assertEq(savings.epochDuration(), DEFAULT_EPOCH_DURATION);
+        assertEq(savings.startTime(), block.timestamp);
         assertEq(savings.totalPrincipal(), 0);
         assertEq(savings.principalOf(alice), 0);
         assertEq(usdc.balanceOf(address(savings)), 0);
@@ -115,16 +120,21 @@ contract StreakSavingsTest is Test {
 
     function test_ConstructorRejectsZeroToken() public {
         vm.expectRevert(StreakSavings.StreakSavings__InvalidToken.selector);
-        new StreakSavings(IERC20(address(0)));
+        new StreakSavings(IERC20(address(0)), DEFAULT_EPOCH_DURATION);
     }
 
     function test_ConstructorRejectsNonContractToken() public {
         vm.expectRevert(StreakSavings.StreakSavings__InvalidToken.selector);
-        new StreakSavings(IERC20(address(0xBEEF)));
+        new StreakSavings(IERC20(address(0xBEEF)), DEFAULT_EPOCH_DURATION);
+    }
+
+    function test_Epoch_RevertWhen_DurationIsZero() public {
+        vm.expectRevert(StreakSavings.StreakSavings__InvalidEpochDuration.selector);
+        new StreakSavings(IERC20(address(usdc)), 0);
     }
 
     // ---------------------------------------------------------------------
-    // P1 — principal accounting consistency
+    // Group B — Principal accounting consistency and edge cases
     // ---------------------------------------------------------------------
 
     function test_DepositCreditsPrincipal() public {
@@ -174,6 +184,20 @@ contract StreakSavingsTest is Test {
         assertGe(usdc.balanceOf(address(savings)), savings.totalPrincipal());
     }
 
+    function test_DirectDonationBeforeAnyDepositDoesNotAffectPrincipal() public {
+        vm.prank(alice);
+        usdc.transfer(address(savings), 3 * ONE_USDC);
+
+        assertEq(savings.totalPrincipal(), 0);
+        assertEq(savings.principalOf(alice), 0);
+        assertEq(usdc.balanceOf(address(savings)), 3 * ONE_USDC);
+
+        _deposit(bob, 5 * ONE_USDC);
+        assertEq(savings.principalOf(bob), 5 * ONE_USDC);
+        assertEq(savings.totalPrincipal(), 5 * ONE_USDC);
+        assertEq(usdc.balanceOf(address(savings)), 8 * ONE_USDC);
+    }
+
     function test_WithdrawThenDepositAgain() public {
         _deposit(alice, 10 * ONE_USDC);
         _withdraw(alice, 10 * ONE_USDC);
@@ -183,10 +207,6 @@ contract StreakSavingsTest is Test {
         assertEq(savings.totalPrincipal(), 3 * ONE_USDC);
         assertEq(usdc.balanceOf(address(savings)), 3 * ONE_USDC);
     }
-
-    // ---------------------------------------------------------------------
-    // P2 — withdrawal limits and partial/full withdrawal
-    // ---------------------------------------------------------------------
 
     function test_WithdrawPartial() public {
         _deposit(alice, 10 * ONE_USDC);
@@ -201,6 +221,18 @@ contract StreakSavingsTest is Test {
         assertEq(savings.totalPrincipal(), 6 * ONE_USDC);
         assertEq(usdc.balanceOf(alice), aliceBalanceBefore + 4 * ONE_USDC);
         assertEq(usdc.balanceOf(address(savings)), 6 * ONE_USDC);
+    }
+
+    function test_MultiplePartialWithdrawalsThenFullWithdraw() public {
+        _deposit(alice, 10 * ONE_USDC);
+        _withdraw(alice, 3 * ONE_USDC);
+        _withdraw(alice, 2 * ONE_USDC);
+        assertEq(savings.principalOf(alice), 5 * ONE_USDC);
+
+        _withdraw(alice, 5 * ONE_USDC);
+        assertEq(savings.principalOf(alice), 0);
+        assertEq(savings.totalPrincipal(), 0);
+        assertEq(usdc.balanceOf(address(savings)), 0);
     }
 
     function test_WithdrawFull() public {
@@ -282,10 +314,6 @@ contract StreakSavingsTest is Test {
         assertEq(savings.principalOf(alice), 0);
     }
 
-    // ---------------------------------------------------------------------
-    // P6 — the contract balance always covers recorded principal
-    // ---------------------------------------------------------------------
-
     function test_ContractBalanceCoversPrincipal() public {
         _deposit(alice, 5 * ONE_USDC);
         _deposit(bob, 7 * ONE_USDC);
@@ -296,7 +324,7 @@ contract StreakSavingsTest is Test {
 
     function test_RevertWhen_FeeOnTransferDeposit() public {
         FeeOnTransferToken feeToken = new FeeOnTransferToken();
-        StreakSavings feeSavings = new StreakSavings(IERC20(address(feeToken)));
+        StreakSavings feeSavings = new StreakSavings(IERC20(address(feeToken)), DEFAULT_EPOCH_DURATION);
 
         feeToken.mint(alice, 100 * ONE_USDC);
         vm.prank(alice);
@@ -315,13 +343,9 @@ contract StreakSavingsTest is Test {
         assertEq(feeToken.balanceOf(address(feeSavings)), 0);
     }
 
-    // ---------------------------------------------------------------------
-    // Reentrancy protection
-    // ---------------------------------------------------------------------
-
     function test_RevertWhen_DepositReenters() public {
         ReentrantToken reentrantToken = new ReentrantToken();
-        StreakSavings reentrantSavings = new StreakSavings(IERC20(address(reentrantToken)));
+        StreakSavings reentrantSavings = new StreakSavings(IERC20(address(reentrantToken)), DEFAULT_EPOCH_DURATION);
 
         reentrantToken.setTarget(reentrantSavings);
         reentrantToken.mint(alice, 10 * ONE_USDC);
@@ -338,7 +362,7 @@ contract StreakSavingsTest is Test {
 
     function test_RevertWhen_WithdrawReenters() public {
         ReentrantToken reentrantToken = new ReentrantToken();
-        StreakSavings reentrantSavings = new StreakSavings(IERC20(address(reentrantToken)));
+        StreakSavings reentrantSavings = new StreakSavings(IERC20(address(reentrantToken)), DEFAULT_EPOCH_DURATION);
 
         reentrantToken.setTarget(reentrantSavings);
         reentrantToken.mint(alice, 10 * ONE_USDC);
@@ -359,7 +383,98 @@ contract StreakSavingsTest is Test {
     }
 
     // ---------------------------------------------------------------------
-    // Fuzz invariants
+    // Group C — Epoch clock and boundaries
+    // ---------------------------------------------------------------------
+
+    function test_Epoch_InitialEpochAtDeployment() public view {
+        uint256 start = savings.startTime();
+        assertEq(savings.currentEpoch(), 0);
+        assertEq(savings.epochStart(0), start);
+        assertEq(savings.epochEnd(0), start + DEFAULT_EPOCH_DURATION);
+        assertEq(savings.nextEpochTimestamp(), start + DEFAULT_EPOCH_DURATION);
+        assertEq(savings.timeUntilNextEpoch(), DEFAULT_EPOCH_DURATION);
+    }
+
+    function test_Epoch_OneSecondBeforeBoundary() public {
+        uint256 start = savings.startTime();
+        vm.warp(start + DEFAULT_EPOCH_DURATION - 1);
+
+        assertEq(savings.currentEpoch(), 0);
+        assertEq(savings.timeUntilNextEpoch(), 1);
+        assertEq(savings.nextEpochTimestamp(), start + DEFAULT_EPOCH_DURATION);
+    }
+
+    function test_Epoch_ExactBoundaryTransition() public {
+        uint256 start = savings.startTime();
+        vm.warp(start + DEFAULT_EPOCH_DURATION);
+
+        assertEq(savings.currentEpoch(), 1);
+        assertEq(savings.epochStart(1), start + DEFAULT_EPOCH_DURATION);
+        assertEq(savings.epochEnd(1), start + 2 * DEFAULT_EPOCH_DURATION);
+        assertEq(savings.timeUntilNextEpoch(), DEFAULT_EPOCH_DURATION);
+    }
+
+    function test_Epoch_OneSecondAfterBoundary() public {
+        uint256 start = savings.startTime();
+        vm.warp(start + DEFAULT_EPOCH_DURATION + 1);
+
+        assertEq(savings.currentEpoch(), 1);
+        assertEq(savings.timeUntilNextEpoch(), DEFAULT_EPOCH_DURATION - 1);
+    }
+
+    function test_Epoch_MultiEpochProgression() public {
+        uint256 start = savings.startTime();
+        vm.warp(start + 5 * DEFAULT_EPOCH_DURATION + 17);
+
+        assertEq(savings.currentEpoch(), 5);
+        assertEq(savings.epochStart(5), start + 5 * DEFAULT_EPOCH_DURATION);
+        assertEq(savings.epochEnd(5), start + 6 * DEFAULT_EPOCH_DURATION);
+        assertEq(savings.timeUntilNextEpoch(), DEFAULT_EPOCH_DURATION - 17);
+    }
+
+    function test_Epoch_ConfigurableSevenDayProductionDuration() public {
+        StreakSavings prodSavings = new StreakSavings(IERC20(address(usdc)), PROD_EPOCH_DURATION);
+        uint256 start = prodSavings.startTime();
+
+        assertEq(prodSavings.epochDuration(), PROD_EPOCH_DURATION);
+        assertEq(prodSavings.currentEpoch(), 0);
+
+        vm.warp(start + PROD_EPOCH_DURATION - 1);
+        assertEq(prodSavings.currentEpoch(), 0);
+        assertEq(prodSavings.timeUntilNextEpoch(), 1);
+
+        vm.warp(start + PROD_EPOCH_DURATION);
+        assertEq(prodSavings.currentEpoch(), 1);
+        assertEq(prodSavings.timeUntilNextEpoch(), PROD_EPOCH_DURATION);
+    }
+
+    function test_Epoch_EpochAtViewAndRevertWhenBeforeStart() public {
+        vm.warp(1_700_000_000);
+        StreakSavings timedSavings = new StreakSavings(IERC20(address(usdc)), DEFAULT_EPOCH_DURATION);
+        uint256 start = timedSavings.startTime();
+
+        assertEq(timedSavings.epochAt(start), 0);
+        assertEq(timedSavings.epochAt(start + 59), 0);
+        assertEq(timedSavings.epochAt(start + 60), 1);
+        assertEq(timedSavings.epochAt(start + 185), 3);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(StreakSavings.StreakSavings__TimestampBeforeStart.selector, start - 1, start)
+        );
+        timedSavings.epochAt(start - 1);
+    }
+
+    function test_Epoch_EpochAtRevertWhen_OverflowUint64() public {
+        StreakSavings oneSecondEpoch = new StreakSavings(IERC20(address(usdc)), 1);
+        uint256 overflowValue = uint256(type(uint64).max) + 1;
+        uint256 overflowTimestamp = uint256(oneSecondEpoch.startTime()) + overflowValue;
+
+        vm.expectRevert(abi.encodeWithSelector(SafeCast.SafeCastOverflowedUintDowncast.selector, 64, overflowValue));
+        oneSecondEpoch.epochAt(overflowTimestamp);
+    }
+
+    // ---------------------------------------------------------------------
+    // Fuzz tests (principal and epoch clock)
     // ---------------------------------------------------------------------
 
     function testFuzz_DepositWithdrawKeepAccountingInSync(
@@ -399,5 +514,27 @@ contract StreakSavingsTest is Test {
             savings.principalOf(alice) + savings.principalOf(bob) + savings.principalOf(carol), savings.totalPrincipal()
         );
         assertGe(usdc.balanceOf(address(savings)), savings.totalPrincipal());
+    }
+
+    function testFuzz_Epoch_BoundariesAndCountdownAreConsistent(uint64 duration, uint64 elapsed) public {
+        duration = uint64(bound(duration, 1, 365 days));
+        elapsed = uint64(bound(elapsed, 0, 10 * 365 days));
+
+        StreakSavings customSavings = new StreakSavings(IERC20(address(usdc)), duration);
+        uint256 start = customSavings.startTime();
+        uint256 targetTime = start + uint256(elapsed);
+
+        vm.warp(targetTime);
+
+        uint64 ep = customSavings.currentEpoch();
+        assertEq(ep, customSavings.epochAt(targetTime));
+        assertEq(uint256(ep), uint256(elapsed) / uint256(duration));
+        assertLe(customSavings.epochStart(ep), targetTime);
+        assertGt(customSavings.epochEnd(ep), targetTime);
+        assertEq(customSavings.epochEnd(ep) - customSavings.epochStart(ep), duration);
+        assertEq(customSavings.nextEpochTimestamp(), customSavings.epochEnd(ep));
+        assertEq(customSavings.timeUntilNextEpoch(), customSavings.epochEnd(ep) - targetTime);
+        assertGt(customSavings.timeUntilNextEpoch(), 0);
+        assertLe(customSavings.timeUntilNextEpoch(), duration);
     }
 }

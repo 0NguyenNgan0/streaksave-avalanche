@@ -6,6 +6,7 @@ import {MockUSDC} from "../src/MockUSDC.sol";
 
 contract MockUSDCTest is Test {
     event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
 
     uint256 private constant ONE_USDC = 1e6;
 
@@ -39,6 +40,16 @@ contract MockUSDCTest is Test {
         assertEq(usdc.totalSupply(), 0);
     }
 
+    function test_MintZeroAmount() public {
+        vm.expectEmit(true, true, false, true, address(usdc));
+        emit Transfer(address(0), alice, 0);
+
+        usdc.mint(alice, 0);
+
+        assertEq(usdc.balanceOf(alice), 0);
+        assertEq(usdc.totalSupply(), 0);
+    }
+
     function test_MintToDeployer() public {
         uint256 amount = 1_000 * ONE_USDC;
 
@@ -62,6 +73,28 @@ contract MockUSDCTest is Test {
         assertEq(usdc.balanceOf(alice), amount);
         assertEq(usdc.balanceOf(deployer), 0);
         assertEq(usdc.totalSupply(), amount);
+    }
+
+    function test_StandardERC20ApproveAndTransferFrom() public {
+        uint256 minted = 50 * ONE_USDC;
+        uint256 allowanceAmount = 20 * ONE_USDC;
+        uint256 transferAmount = 12 * ONE_USDC;
+
+        usdc.mint(alice, minted);
+
+        vm.expectEmit(true, true, false, true, address(usdc));
+        emit Approval(alice, bob, allowanceAmount);
+        vm.prank(alice);
+        assertTrue(usdc.approve(bob, allowanceAmount));
+        assertEq(usdc.allowance(alice, bob), allowanceAmount);
+
+        vm.prank(bob);
+        assertTrue(usdc.transferFrom(alice, bob, transferAmount));
+
+        assertEq(usdc.balanceOf(alice), minted - transferAmount);
+        assertEq(usdc.balanceOf(bob), transferAmount);
+        assertEq(usdc.allowance(alice, bob), allowanceAmount - transferAmount);
+        assertEq(usdc.totalSupply(), minted);
     }
 
     function test_RevertWhen_NonMinterMints() public {
@@ -99,5 +132,17 @@ contract MockUSDCTest is Test {
 
         assertEq(usdc.balanceOf(alice), amount);
         assertEq(usdc.totalSupply(), amount);
+    }
+
+    function testFuzz_RevertWhen_AnyNonMinterMints(address caller, address recipient, uint256 amount) public {
+        vm.assume(caller != deployer);
+        vm.assume(recipient != address(0));
+        amount = bound(amount, 0, 1e30);
+
+        vm.expectRevert(abi.encodeWithSelector(MockUSDC.MockUSDC__UnauthorizedMinter.selector, caller));
+        vm.prank(caller);
+        usdc.mint(recipient, amount);
+
+        assertEq(usdc.totalSupply(), 0);
     }
 }
