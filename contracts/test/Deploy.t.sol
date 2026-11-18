@@ -59,6 +59,9 @@ contract DeployTest is Test {
         assertEq(address(savings.usdc()), address(usdc));
         assertEq(savings.epochDuration(), 60);
         assertEq(savings.totalPrincipal(), 0);
+        assertEq(savings.totalWeight(), 0);
+        assertEq(savings.totalRewardPool(), 0);
+        assertEq(savings.yieldProvider(), expectedDeployer);
         assertEq(savings.currentEpoch(), 0);
     }
 

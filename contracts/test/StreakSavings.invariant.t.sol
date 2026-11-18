@@ -140,6 +140,28 @@ contract StreakSavingsInvariantTest is StdInvariant, Test {
         }
     }
 
+    function invariant_TotalWeightEqualsSumOfCachedUserWeights() public view {
+        uint256 aggregate = 0;
+        for (uint256 i = 0; i < handler.actorCount(); i++) {
+            aggregate += savings.weightOf(handler.actors(i));
+        }
+        assertEq(savings.totalWeight(), aggregate);
+    }
+
+    function invariant_WeightMatchesPrincipalAndStreak() public view {
+        for (uint256 i = 0; i < handler.actorCount(); i++) {
+            address actor = handler.actors(i);
+            uint256 principal = savings.principalOf(actor);
+            uint256 weight = savings.weightOf(actor);
+            if (principal == 0) {
+                assertEq(weight, 0);
+                assertEq(savings.streakOf(actor), 0);
+            } else {
+                assertEq(weight, savings.streakOf(actor));
+            }
+        }
+    }
+
     function invariant_EpochClockBoundariesAreConsistent() public view {
         uint64 ep = savings.currentEpoch();
         assertLe(savings.epochStart(ep), block.timestamp);

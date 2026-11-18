@@ -105,14 +105,11 @@ contract StreakAccountingMathTest is Test {
         math.classifyEpochTransition(5, 4, true);
     }
 
-    /// @notice Verifies that same-epoch behavior (BL-01) is classified without guessing a
-    ///         business outcome and explicitly reverts until team approval is recorded.
-    function test_Streak_PendingBL01_SameEpochTransitionIsClassifiedAndGated() public {
+    /// @notice BR-01: a second deposit in the same epoch is principal-only.
+    function test_Streak_SameEpochDepositDoesNotIncrement() public view {
         StreakAccountingMath.EpochRelation rel = math.classifyEpochTransition(7, 7, true);
         assertEq(uint256(rel), uint256(StreakAccountingMath.EpochRelation.SameEpoch));
-
-        vm.expectRevert(StreakAccountingMath.StreakAccountingMath__UnapprovedSameEpochRule.selector);
-        math.computeConfirmedStreakTransition(3, rel);
+        assertEq(math.computeConfirmedStreakTransition(3, rel), 3);
     }
 
     function testFuzz_Streak_ConfirmedConsecutiveAndResetRules(uint64 currentStreak, uint64 lastEpoch, uint64 gap)
