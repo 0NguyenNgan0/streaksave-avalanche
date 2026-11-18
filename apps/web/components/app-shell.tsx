@@ -1,22 +1,34 @@
 import Link from "next/link";
 import { WalletButton } from "./wallet-button";
 
+function BrandMark() {
+  return <span className="avax-mark"><i/><b/></span>;
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="shell">
-      <header className="header">
-        <Link href="/" className="brand">
-          <span className="brand-mark">A</span>
-          <span>StreakSave</span>
-        </Link>
-        <WalletButton />
+    <main className="app-root">
+      <header className="topbar">
+        <Link href="/" className="top-brand"><BrandMark/><span>StreakSave</span></Link>
+        <nav className="desktop-nav" aria-label="Primary">
+          <Link href="/" className="active"><span>⌂</span>Trang chủ</Link>
+          <Link href="/deposit"><span>◎</span>Nạp tiền</Link>
+          <Link href="/rewards"><span>♔</span>Phần thưởng</Link>
+          <Link href="/withdraw"><span>▣</span>Rút tiền</Link>
+        </nav>
+        <div className="top-actions">
+          <div className="network-pill"><BrandMark/><span>Avalanche Fuji</span><b>⌄</b></div>
+          <WalletButton />
+        </div>
       </header>
-      {children}
-      <nav className="nav" aria-label="Primary">
-        <Link href="/"><span className="nav-icon">🏠</span>Trang chủ</Link>
-        <Link href="/deposit"><span className="nav-icon">🪙</span>Nạp tiền</Link>
-        <Link href="/rewards"><span className="nav-icon">🎁</span>Phần thưởng</Link>
-        <Link href="/withdraw"><span className="nav-icon">👛</span>Rút tiền</Link>
+
+      <div className="page-canvas">{children}</div>
+
+      <nav className="mobile-nav" aria-label="Mobile primary">
+        <Link href="/"><span>⌂</span>Trang chủ</Link>
+        <Link href="/deposit"><span>◎</span>Nạp tiền</Link>
+        <Link href="/rewards"><span>♔</span>Phần thưởng</Link>
+        <Link href="/withdraw"><span>▣</span>Rút tiền</Link>
       </nav>
     </main>
   );
