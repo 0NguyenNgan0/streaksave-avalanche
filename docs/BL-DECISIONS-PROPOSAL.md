@@ -3,7 +3,7 @@
 **Contract:** `StreakSavings.sol`
 **Author:** Member A (Smart Contract)
 **Date:** 16/11/2026
-**Status:** **Awaiting team approval.** Principal accounting is unblocked; streak and reward accounting are not.
+**Status:** **SUPERSEDED on 18/11/2026.** The team confirmed BR-01..BR-06, including same-epoch no-increment, full-withdrawal reset, zero-principal zero-weight, epoch-scoped end-of-epoch snapshots, permanent unclaimed rewards, and the dual claim API. The final implementation is recorded in `docs/MEMBER-A-TECHNICAL-DECISIONS.md` and `docs/SMART-CONTRACT-ARCHITECTURE.md`. This document remains as the 16/11 proposal history.
 
 | Label | Meaning |
 |---|---|

@@ -2,194 +2,135 @@
 
 **Contract Scope:** `MockUSDC.sol`, `StreakSavings.sol`, `StreakAccountingMath.sol`, `Deploy.s.sol`  
 **Author:** Member A (Smart Contract & Avalanche Engineer)  
-**Date:** 17/11/2026  
+**Final implementation:** 18/11/2026  
 **Repository Branch:** `feature/principal-accounting`  
-**Authoritative Inputs:**
-- `Team_Dimple_UniHack_2026_MVP_Execution_Plan_v3_Technical_Safeguards.docx` (`extracted_plan.txt`)
-- `docs/TS-02-StreakSavings-Design.md`
-- `docs/BL-DECISIONS-PROPOSAL.md`
+**Authoritative Inputs:** Team-confirmed BR-01..BR-06 (18/11/2026), MVP Execution Plan v3, `docs/TS-02-StreakSavings-Design.md`, `docs/BL-DECISIONS-PROPOSAL.md`.
+
+> **History note:** The 16/11 BL proposal and 17/11 decision register listed BL-01, BL-02, BL-03, BL-10, BL-11, and BL-13 as blocked. On 18/11/2026 the team confirmed BR-01..BR-06. This register records the approved rules and the final implementation; the earlier documents remain as design history.
 
 ---
 
-## 1. Classification Legend
+## 1. Confirmed Business Rules (Implemented)
 
-| Status | Meaning | Implementation Rule |
+| ID | Rule | Implementation |
 |---|---|---|
-| **APPROVED** | Explicitly confirmed in Team Dimple's MVP Execution Plan v3 or baseline specifications. | Implemented in production contract code and verified by tests. |
-| **TECHNICAL DECISION** | Engineering detail that does not alter unapproved user-facing business rules. | Independently decided and implemented by Member A. |
-| **PROPOSED** | Recommendation by Member A in `docs/BL-DECISIONS-PROPOSAL.md`; not yet team-confirmed. | Documented only; **not** hard-coded into `StreakSavings.sol` state transitions. |
-| **BLOCKED** | Unresolved business rule whose choice changes contract storage layout, external API, or user funds/rewards. | Cannot be implemented in `StreakSavings.sol` until team approval is recorded. |
-| **DEFERRED** | Explicitly outside MVP scope per Plan v3 §0 and §5. | Excluded from MVP contracts. |
+| **BR-01** | At most one streak check-in per epoch. First deposit ever → 1; consecutive epoch → +1; same epoch → no change; missed epoch → 1. | `deposit()` classifies the epoch relation and updates `streak`; repeated same-epoch deposits only add principal. |
+| **BR-02** | Full withdrawal resets the active streak. Partial withdrawal does not. A later deposit starts at 1. | `withdraw()` resets `streak`, `lastDepositEpoch`, and active weight when remaining principal is zero. |
+| **BR-03** | `weight = streak` if principal > 0; `weight = 0` if principal == 0. Global weight uses `-old + new`. | `UserInfo.weight`, `totalWeight`, and `StreakAccountingMath.applyWeightDelta`. |
+| **BR-04** | Epoch-scoped reward pool using the weight snapshot at the END of each epoch; closed epochs are immutable; no user loop. | Per-epoch `weightInEpoch` and `totalWeightInEpoch`, written only while that epoch is current; claims require `epoch < currentEpoch()`. |
+| **BR-05** | Unclaimed rewards never expire. | No expiry logic; per-epoch `claimedInEpoch`; `claimRewardFor(epoch)` remains available forever. |
+| **BR-06** | Preserve `claimReward()` and add `claimRewardFor(uint64 epoch)`. Prevent double claims and claims before finalization. | Implemented both; `claimedInEpoch` and `EpochNotFinalized`. |
+
+The existing `MockUSDC` specification also remains confirmed: name `Mock USDC`, symbol `USDC`, 6 decimals, zero initial supply, immutable deployer-only minter, zero-address rejection, test-only value.
 
 ---
 
-## 2. APPROVED Items (Implemented Baseline)
+## 2. Technical Decisions
 
-1. **`MockUSDC` Token Specification** (Plan v3 §4.1, §7)
-   - ERC-20 with `name = "Mock USDC"`, `symbol = "USDC"`, `decimals() = 6`.
-   - Zero initial supply at deployment; immutable `minter = msg.sender`; zero-address mint rejection.
-   - Test-only faucet token with no monetary value.
-2. **Principal Accounting & No-Loss Isolation** (Plan v3 §3, §4.2, §4.3, §16.5, §16.6)
-   - `deposit(uint256)`, `withdraw(uint256)`, `principalOf(address)`, `totalPrincipal`.
-   - Contract token balance is never treated as `totalPrincipal` or `rewardPool`.
-   - Breaking or losing a streak never confiscates or penalizes user principal.
-3. **Configurable Global Epoch Clock without Admin Override** (Plan v3 §4.3, §16.2; `BL-DECISIONS-PROPOSAL.md` §1)
-   - `epochDuration` is a constructor parameter (`uint64`, e.g., `60` seconds for Fuji demo, `7 days` for production concept) and cannot be zero.
-   - No `advanceEpoch()` admin backdoor; epochs derive deterministically from `block.timestamp`.
-4. **Core Confirmed Streak & Weight Formulas** (Plan v3 §4.3, §4.4, §16.4)
-   - First deposit ever sets `streak = 1`.
-   - Deposit in consecutive epoch (`lastDepositEpoch + 1`) sets `streak = currentStreak + 1`.
-   - Deposit after missing at least one epoch (`> lastDepositEpoch + 1`) sets `streak = 1`.
-   - `weight = streak` (no `principal * multiplier` in MVP).
-   - Global weight update must subtract old weight before adding new weight: `totalWeight = totalWeight - oldWeight + newWeight`.
-5. **No Unbounded User Iteration & Mock Yield Only** (Plan v3 §2.3, §5, §16.1)
-   - Zero loops over all depositors in `deposit`, `withdraw`, `addMockYield`, or `claimReward`.
-   - Yield is simulated mock yield (`addMockYield`), never represented as real DeFi yield.
-
----
-
-## 3. TECHNICAL DECISIONS (Independently Decided by Member A)
-
-| ID | Decision | Rationale | Location |
-|---|---|---|---|
-| **TD-01** | Anchor epoch 0 globally at `startTime = SafeCast.toUint64(block.timestamp)` in `StreakSavings` constructor. | Aligns all users on one shared epoch countdown (needed for Plan §16.2 UI countdown and Model A shared epoch pots) and removes per-user clock drift. | `StreakSavings.sol` |
-| **TD-02** | Reject `address(0)` AND addresses with `code.length == 0` for `usdc_` in `StreakSavings` constructor. | Fails fast on misconfigured deployments (e.g., EOA passed instead of `MockUSDC`) without requiring admin setter functions. | `StreakSavings.sol` |
-| **TD-03** | Verify actual received token delta (`balanceAfter - balanceBefore == amount`) in `deposit`. | Protects principal solvency invariants if a non-standard/fee-on-transfer token is ever paired in tests. | `StreakSavings.sol` |
-| **TD-04** | Use OpenZeppelin `SafeCast.toUint64` for `startTime`, `currentEpoch()`, and `epochAt(uint256)` plus `TimestampBeforeStart` custom error. | Prevents silent truncation on arbitrary `uint256` inputs to `epochAt` while keeping normal runtime timestamps safe (`uint64` covers >584 billion years at 1s epochs). | `StreakSavings.sol`, `StreakAccountingMath.sol` |
-| **TD-05** | Expose countdown/boundary helpers (`epochAt`, `epochStart`, `epochEnd`, `nextEpochTimestamp`, `timeUntilNextEpoch`). | Supports frontend epoch countdown (Plan §16.2) as pure/view calculations with zero extra storage writes. | `StreakSavings.sol` |
-| **TD-06** | Isolate confirmed pure math (epoch transitions, `applyWeightDelta`, Model A/B reward math) in `StreakAccountingMath.sol` while gating `SameEpoch` with `UnapprovedSameEpochRule()`. | Allows unit/fuzz validation of T1–T8 math and Plan §16.4 invariants without exposing unfinished public reward/streak state on `StreakSavings.sol` before BL approval. | `StreakAccountingMath.sol` |
-| **TD-07** | Do **not** expose stub `streakOf`, `rewardOf`, `claimReward`, or `addMockYield` on `StreakSavings.sol` yet. | Prevents frontend/QA from confusing a stubbed zero-returning endpoint with finished streak/reward behavior. | `StreakSavings.sol` |
-| **TD-08** | Enforce explicit `DEPLOYER_PRIVATE_KEY`, chain ID (`43113` Fuji or opt-in `31337` Anvil), non-zero `epochDuration`, and on-chain post-deploy verification in `Deploy.s.sol`. | Eliminates accidental mainnet broadcasts, zero-duration deployments, or unverified token wiring. | `Deploy.s.sol` |
-
----
-
-## 4. BLOCKED & PROPOSED Business Logic Decisions
-
-> **Audit Check (17/11/2026):** No newer team approval record exists in the repository beyond `docs/BL-DECISIONS-PROPOSAL.md` (`16/11/2026`). Therefore, all blocking decisions remain unresolved and are **not** encoded into `StreakSavings.sol` state transitions.
-
-### 4.1 Critical Blocking Decisions (Storage Layout, State Transitions, Public API)
-
-#### BL-01 — Multiple deposits in the same epoch
-- **Current Status:** `BLOCKED` (`REQUIRES APPROVAL`).
-- **Evidence:** `docs/BL-DECISIONS-PROPOSAL.md` §2; `docs/TS-02-StreakSavings-Design.md` §6, §15. Plan v3 §4.3 specifies first deposit, next epoch, and missed epoch, but omits same-epoch repeat deposits.
-- **Is it genuinely unresolved?** Yes.
-- **Technical Consequences:**
-  - Option A (Recommended): keep streak unchanged (`epoch == lastDepositEpoch` acts as a principal top-up only). Prevents infinite streak farming in one epoch.
-  - Option B: increment per deposit (critical exploit: N small deposits in 60 seconds yield streak N).
-  - Option C: revert on second deposit in same epoch (hurts UX if user wants to top up savings).
-- **Storage Layout Implications:** Requires `uint64 lastDepositEpoch` (plus an initialization flag or `lastDepositEpoch + 1` sentinel / `streak > 0` check) in `UserInfo`. Option A/B/C share the field, but Model A's `weightInEpoch[user][epoch]` updates differ if Option A vs B is chosen.
-- **Function/API Implications:** Affects `deposit(uint256)` streak update branch and whether `StreakUpdated` emits on repeat same-epoch deposits.
-- **Test Cases Affected:** `P3` (repeated deposit in same epoch), `StreakAccountingMathTest.test_Streak_PendingBL01_SameEpochTransitionIsClassifiedAndGated`.
-- **What It Blocks:** Implementing `streak` state updates inside `StreakSavings.deposit()`.
-
-#### BL-02 — Full withdrawal and streak behavior
-- **Current Status:** `BLOCKED` (`REQUIRES APPROVAL`).
-- **Evidence:** Plan v3 §4.3 explicitly defers this to the team ("Withdraw: Không làm mất principal; rule streak phải được team chốt và test rõ ràng"). `docs/BL-DECISIONS-PROPOSAL.md` §2.
-- **Is it genuinely unresolved?** Yes.
-- **Technical Consequences:**
-  - Option A (Recommended, paired with BL-03 Option A): keep historical `streak`, set active `weight = 0` while `principal == 0`. Preserves "no penalty" narrative while preventing zero-capital farming.
-  - Option B: reset `streak = 0` and `lastDepositEpoch = 0` on full withdrawal. Forces capital lock-in across epochs to retain streak.
-  - Option C: 1-epoch grace period (adds complexity).
-- **Storage Layout Implications:** Affects whether `withdraw()` mutates `UserInfo.streak` and `UserInfo.lastDepositEpoch`, and whether `UserInfo.weight` is stored separately from `UserInfo.streak` (required by Option A, redundant under Option B).
-- **Function/API Implications:** `withdraw(uint256)` state transition, `streakOf(address)`, and `weightOf(address)` return values after full withdrawal.
-- **Test Cases Affected:** `P5` (full withdrawal behavior), `T7` (withdraw then add yield).
-- **What It Blocks:** Streak/weight mutation inside `StreakSavings.withdraw()` and `UserInfo` struct finalization.
-
-#### BL-03 — Weight when principal is zero
-- **Current Status:** `BLOCKED` (`REQUIRES APPROVAL`).
-- **Evidence:** `docs/BL-DECISIONS-PROPOSAL.md` §2; Plan v3 §4.4 states `weight = streak` without specifying what happens when `principal == 0`.
-- **Is it genuinely unresolved?** Yes.
-- **Technical Consequences:**
-  - Option A (Recommended): `weight = 0` whenever `principal == 0`, restoring `weight = streak` upon deposit. Closes the zero-principal free-rider exploit.
-  - Option B: `weight = streak` even when `principal == 0` (severe economic flaw: deposit 1 wei, withdraw immediately, farm rewards forever).
-  - Option C: `weight = streak * principal` (explicitly excluded from MVP by Plan v3 §4.4).
-- **Storage Layout Implications:** Under BL-02 Option A + BL-03 Option A, `UserInfo` must distinguish `streak` from active `weight` (or derive `weight = principal > 0 ? streak : 0`). Also mandates updating `totalWeight` in `withdraw()` and `deposit()` whenever `principal` crosses between `0` and `> 0`.
-- **Function/API Implications:** `deposit(uint256)`, `withdraw(uint256)`, `weightOf(address)`.
-- **Test Cases Affected:** `P5`, `T6`, `T7`, zero-principal invariant checks.
-- **What It Blocks:** All `weight` and `totalWeight` state transitions and reward eligibility math.
-
-#### BL-10 — Reward distribution timing & accounting model
-- **Current Status:** `BLOCKED` (`REQUIRES APPROVAL`).
-- **Evidence:** Plan v3 §16.1 recommends starting with one clear epoch-scoped reward model ("MVP ưu tiên 1 reward epoch rõ ràng; chỉ nâng lên accumulator `accRewardPerWeight + rewardDebt` khi test đầy đủ"). `docs/TS-02-StreakSavings-Design.md` §9 and `docs/BL-DECISIONS-PROPOSAL.md` §2 lay out Model A vs Model B as an unresolved team decision.
-- **Is it genuinely unresolved?** Yes.
-- **Technical Consequences & Storage/API Implications:**
-  - **Model A (Epoch-scoped pot — Recommended for MVP):** Requires `mapping(uint64 epoch => uint256) rewardPoolInEpoch`, `mapping(uint64 epoch => uint256) totalWeightInEpoch`, `mapping(address => mapping(uint64 => uint256)) weightInEpoch`, `mapping(address => mapping(uint64 => bool)) claimedInEpoch`, plus tracking active/claimable epochs. Claims occur only after epoch close (`epoch < currentEpoch()`).
-  - **Model B (Continuous accumulator):** Requires `accRewardPerWeight`, `rewardPool`, `totalWeight`, `UserInfo.rewardCredit`, `UserInfo.rewardDebt`. Allows immediate intra-epoch claims (`T4`) but suffers from inactive stale weight unless combined with epoch participation pruning.
-  - Because storage layouts and user wait UX (`60s` wait vs immediate claim) are mutually incompatible, Model A vs Model B must be chosen before writing reward storage.
-- **Test Cases Affected:** Entire `T1`–`T8` suite and reward solvency invariants (`T4`/`T5` behavior differs across intra-epoch vs inter-epoch claims).
-- **What It Blocks:** All reward storage, `addMockYield`, `rewardOf`, and `claimReward`.
-
-#### BL-11 — Claim scope and API (`claimReward()`)
-- **Current Status:** `BLOCKED` (`REQUIRES APPROVAL`).
-- **Evidence:** `apps/web/lib/contracts.ts` defines `claimReward()` with zero arguments and `rewardOf(address)` returning `uint256`. Plan v3 §4.2 and §16.1 require no unbounded loops.
-- **Is it genuinely unresolved?** Yes (directly coupled to BL-10).
-- **Technical Consequences:**
-  - Option A (Recommended if BL-10 = Model A): `claimReward()` claims the latest matured/eligible epoch in `O(1)` (or tracks a single user-claimable epoch pointer / latest deposited matured epoch), plus `claimRewardFor(uint64 epoch)` for explicit historical epochs. Preserves frontend ABI without unbounded loops.
-  - Option B: `claimReward(uint64 epoch)` only (breaks current `apps/web/lib/contracts.ts` signature).
-  - Option C: `claimReward()` loops over all past epochs (violates Plan §16.1 gas safeguard; unbounded DoS risk).
-  - Option D (Required if BL-10 = Model B): `claimReward()` settles and transfers `rewardCredit` in `O(1)`.
-- **Storage Layout Implications:** Under Model A Option A, must maintain an `O(1)` reference or per-user epoch cursor so `claimReward()` and `rewardOf(address)` do not scan unbounded epoch history (e.g., `lastParticipatedEpoch` or a capped/linked list). Under Option D, only `rewardCredit` + `rewardDebt` are needed.
-- **Function/API Implications:** External signatures of `claimReward()`, `rewardOf(address)`, and optional `claimRewardFor(uint64)`.
-- **Test Cases Affected:** `T4`, `T5`, `T8`, and frontend ABI compatibility.
-- **What It Blocks:** `claimReward` and `rewardOf` implementation.
-
-#### BL-13 — Lifecycle of unclaimed epoch rewards (Prerequisite for Reward Implementation)
-- **Current Status:** `BLOCKED` (`REQUIRES APPROVAL`).
-- **Evidence:** `docs/TS-02-StreakSavings-Design.md` §15; `docs/BL-DECISIONS-PROPOSAL.md` §3, §5 ("Blocked until approval: `addMockYield`, `rewardOf`, `claimReward` (BL-06, BL-10, BL-11, BL-13)").
-- **Investigation of Day 2 Report Ambiguity:** `docs/BL-DECISIONS-PROPOSAL.md` §3 originally tagged BL-13 "non-blocking today" *specifically relative to Day 2 principal-only accounting*, while §5 correctly listed BL-13 as a blocker for `addMockYield`, `rewardOf`, and `claimReward`. Under Model A (epoch-scoped reward pools), BL-13 is a direct implementation prerequisite because the contract must define what happens when an epoch closes with unclaimed funds or zero claims:
-  - Option A (Recommended): **Claimable forever** — `rewardPoolInEpoch[E]` remains reserved for epoch `E` participants via `claimRewardFor(E)` with no expiry. Safest no-confiscation rule and simplest accounting (`rewardPool >= sum of unclaimed epoch entitlements`).
-  - Option B: **Roll forward into epoch `E + 1`** — requires an explicit expiry threshold + sweep mechanism, retroactively redistributes unclaimed rewards to future depositors, and introduces edge cases when `claimReward` races with rollover.
-  - Option C: **Forfeit after N epochs** — requires admin/treasury destination and conflicts with StreakSave's user-protection positioning.
-- **Storage & Accounting Implications:** Determines whether `rewardPool` can decrement only on actual user claims (Option A) or requires epoch rollover accounting/state cleanup (Options B/C). Also governs whether `rewardOf(user)` under Option A must query historical unclaimed epochs vs just `lastDepositedEpoch`.
-- **What It Blocks:** Final Model A reward pool accounting, `claimReward` / `claimRewardFor`, and reward pool conservation invariants.
-
-### 4.2 Non-Blocking Pending Decisions (`PROPOSED` / `REQUIRES APPROVAL` for Next Layers)
-
-| ID | Question | Recommendation | Status | Blocks |
-|---|---|---|---|---|
-| **BL-04** | Partial withdrawal preserves full streak weight? | Keep `weight = streak` (Plan §4.4); document 99%-withdraw trade-off. | `REQUIRES APPROVAL` | Weight update in `withdraw()`. |
-| **BL-05** | Zero-principal user keeps earned rewards? | Yes — pay previously accrued `rewardCredit`. | `PROPOSED` | `withdraw()` / `claimReward()` interaction. |
-| **BL-06** | `addMockYield` when `totalWeight == 0`? | Revert with `StreakSavings__NoActiveWeight()`. | `PROPOSED` | `addMockYield()` validation. |
-| **BL-07** | Who can call `addMockYield`? | Permissionless donation (no admin role needed). | `PROPOSED` | `addMockYield()` access control. |
-| **BL-08** | Minimum deposit amount? | No minimum; reject zero (`amount == 0`). | `PROPOSED` | `deposit()` input validation. |
-| **BL-09** | `streakOf(address)` stored vs effective after missed epoch? | Keep `streakOf` stored/historical + add `effectiveStreakOf` / `weightOf` for UI. | `REQUIRES APPROVAL` (UI semantics) | `streakOf()` semantics & UI display. |
-| **BL-12** | Is `epochDuration` immutable? | Yes (`immutable` constructor param — already implemented). | `PROPOSED` (implemented as immutable per Plan §16.2) | Would require governance/admin if mutable. |
-| **BL-14** | Deposit for another address (`depositFor`)? | No (`msg.sender` only). | `PROPOSED` | Not part of MVP interface. |
-| **BL-15** | TVL / deposit cap on Fuji? | No cap for testnet MVP. | `PROPOSED` | Production risk control later. |
-
----
-
-## 5. Architectural Evaluation: Model A vs. Model B Reward Accounting
-
-This comparison evaluates the two candidate reward accounting models referenced in MVP Execution Plan v3 §16.1 and `docs/TS-02-StreakSavings-Design.md` §9 across all 10 engineering criteria.
-
-| Criterion | Model A — Epoch-Scoped Accounting | Model B — Continuous Accumulator (`accRewardPerWeight` + `rewardDebt`) |
+| ID | Decision | Rationale |
 |---|---|---|
-| **1. Storage Complexity** | Moderate-High per epoch: `rewardPoolInEpoch[E]`, `totalWeightInEpoch[E]`, `weightInEpoch[user][E]`, `claimedInEpoch[user][E]`, plus a non-looping pointer (`lastParticipatedEpoch[user]` or active-epoch queue) for `claimReward()`. | Compact: global `accRewardPerWeight`, `rewardPool`, `totalWeight`; per-user `weight`, `rewardCredit`, `rewardDebt` inside `UserInfo`. |
-| **2. Gas Cost** | `O(1)` per `deposit`, `addMockYield`, and `claimRewardFor(epoch)`. Slightly higher SSTORE count during `deposit` to write epoch-scoped weight maps; `claimReward()` needs an `O(1)` epoch pointer to avoid scanning history. | `O(1)` across all operations (`deposit`, `withdraw`, `addMockYield`, `claimReward`). Single checkpoint helper `_settle(user)` touches only user struct + 2 globals. |
-| **3. Historical Reward Preservation** | Naturally isolated by epoch: once epoch `E` closes, `totalWeightInEpoch[E]` and `weightInEpoch[user][E]` never change retroactively. | Preserved via `_settle(user)` checkpoint into `user.rewardCredit` **before** any weight or debt update. |
-| **4. Weight Changes** | Simple within epoch `E`: `applyWeightDelta(totalWeightInEpoch[E], prevEpochWeight, newEpochWeight)`. Does not mutate past closed epochs. | Must settle `user` first, update `totalWeight` via `-old + new`, update `user.weight`, then reset `rewardDebt = user.weight * acc / PRECISION`. |
-| **5. Multiple Yield Additions** | Multiple `addMockYield` calls in epoch `E` simply increment `rewardPoolInEpoch[E]`. No double counting. | Multiple `addMockYield` calls increment `accRewardPerWeight += amount * PRECISION / totalWeight`. No double counting. |
-| **6. Claims Between Yield Additions (T4/T5)** | **Cannot happen within the same epoch**: users must wait until epoch `E` closes before claiming from `E`. Works cleanly *across* epochs (`add in E` -> close `E` -> `claim E` -> `add in E+1`). | **Works immediately within the same epoch**: `rewardDebt` advances on claim so subsequent yield additions only accrue the delta `accNew - accOld`. |
-| **7. Unclaimed Rewards (BL-13)** | Unclaimed rewards stay per-epoch (`rewardPoolInEpoch[E]`). If a user skips claiming epoch `E` and deposits in `E+1`, a single `lastDepositedEpoch` pointer risks stranding `E` unless `claimRewardFor(E)` or a linked list/bitmap is exposed. | Automatically unified in `rewardCredit + pending`. Never stranded across epochs—one zero-arg `claimReward()` collects 100% of past unclaimed yield in `O(1)`. |
-| **8. Rounding Behavior** | Floor division `(epochPool * weightInEpoch) / totalWeightInEpoch` at claim time. Rounding dust (`<= 1` wei per user per epoch) remains safely in contract balance (`sum <= epochPool`). | Floor division both when computing `accRewardPerWeight` delta (`yield * 1e18 / totalWeight`) and when settling `user.weight * acc / 1e18`. With `1e18` precision, dust per operation is negligible (`<= 1` base unit per user); `rewardPool` always covers `sum(claims)`. |
-| **9. Frontend API Complexity** | Needs epoch awareness in UI (`claimableEpoch` / `claimRewardFor(epoch)` or explanation why current-epoch rewards cannot be claimed until countdown hits 0). | Matches `apps/web/lib/contracts.ts` (`rewardOf(address)` + `claimReward()`) out of the box with zero extra arguments or epoch pagination. |
-| **10. Testability** | Clean per-epoch invariants, but requires testing multi-epoch boundary transitions and skipped-epoch claim UX (`claimReward()` vs `claimRewardFor(E)`). | Direct fit for T1–T8 tests without artificial epoch waits, but requires strict property/invariant tests verifying the **stale-weight** caveat (inactive users who never withdraw/deposit keep `weight` unless deactivated on epoch participation). |
-
-### Recommendation for MVP
-
-- **Primary Recommendation (MVP Alignment):** **Model A (Epoch-Scoped Accounting)** combined with **BL-11 Option A** (`claimReward()` + `claimRewardFor(uint64 epoch)`) and **BL-13 Option A** (claimable forever), **if and only if** the team accepts waiting 1 epoch (`60s` on Fuji demo) before claiming that epoch's yield. It completely eliminates the **stale-weight** problem (an inactive depositor from Epoch 0 cannot passively dilute active savers in Epoch 50 without depositing in Epoch 50) and directly implements Plan v3 §16.1 ("MVP ưu tiên 1 reward epoch rõ ràng").
-- **Alternative if Immediate Intra-Epoch Demo Claim is Required:** **Model B (Continuous Accumulator)** should only be chosen if the 3-minute hackathon demo cannot wait `60s` between `addMockYield` and `claimReward` AND the team explicitly accepts the documented stale-weight behavior (no automatic decay of inactive users without user action).
+| **TD-01** | Global epoch anchor `startTime = block.timestamp` in the constructor. | All users share one clock; no per-user drift. |
+| **TD-02** | Reject zero-address and code-less token addresses in the constructor. | Fails fast on misconfiguration without an admin setter. |
+| **TD-03** | Verify the exact token balance delta after every `safeTransferFrom` (deposit and mock yield). | Rejects fee-on-transfer/under-delivering tokens. |
+| **TD-04** | Use `SafeCast.toUint64` for timestamps/epochs and expose `TimestampBeforeStart`. | Prevents silent truncation. |
+| **TD-05** | Keep all epoch boundary/countdown helpers as views. | Frontend countdown and deterministic boundaries, zero storage writes. |
+| **TD-06** | Use Model A (epoch-scoped pot), not a continuous accumulator. | Matches BR-04's end-of-epoch snapshot and eliminates the stale-weight problem for rewards. |
+| **TD-07** | Snapshot mechanism = per-epoch mappings written only during the current epoch + time-gated claims. | O(1) per user action; no epoch-finalization transaction; no user iteration. Closed epochs are unreachable for writes. |
+| **TD-08** | `addMockYield` is restricted to an immutable `yieldProvider` set to the deployer. | Prevents arbitrary users from choosing which epoch receives mock yield; matches the demo-account funding flow. |
+| **TD-09** | `rewardOf(user)` reports the latest finalized epoch only; `rewardInEpoch(user, epoch)` exposes history; `claimReward()` claims the latest finalized epoch; `claimRewardFor(epoch)` claims older epochs. | Preserves the frontend zero-argument ABI and avoids an unbounded historical scan. Older rewards never expire. |
+| **TD-10** | `streakOf` returns the stored streak; `effectiveStreakOf` returns 0 after a missed epoch. | Keeps historical/accounting state explicit while giving the UI a correct active-streak view. |
+| **TD-11** | Use `Math.mulDiv` for reward shares and accumulator math. | Prevents multiplication overflow and preserves floor behavior. |
+| **TD-12** | Rounding dust remains in `totalRewardPool` and the contract balance; it is never redistributed or confiscated. | Conservative solvency accounting; no admin rescue. |
+| **TD-13** | No owner/pause/upgrade/rescue surface. | Minimizes privilege; testnet MVP. |
+| **TD-14** | Keep `Deposit` and `Withdraw` signatures unchanged; add `StreakUpdated`, `StreakReset`, `MockYieldAdded`, `RewardClaimed`. | Avoids breaking the current frontend integration. |
 
 ---
 
-## 6. DEFERRED Items (Out of MVP Scope)
+## 3. Epoch Snapshot Design
 
-Per Team Dimple MVP Execution Plan v3 §0, §5, and §16.7:
-- `NFTBadge.sol` (streak milestone NFTs — bonus #1 only after Deposit -> Streak -> Reward -> Claim -> Withdraw E2E passes on Fuji).
-- Privy Embedded Wallet integration (optional UI enhancement).
-- Real DeFi yield adapters (Aave / Benqi).
-- Agent Wallet / automated recurring deposits.
-- Shared Streak / social pools.
-- ERC-4626 tokenized vault standard.
-- Custom Avalanche L1.
+### State
+- `weightInEpoch[user][E]` — the user's weight for epoch `E`.
+- `totalWeightInEpoch[E]` — sum of weights of users who checked in during `E`.
+- `rewardPoolInEpoch[E]` — mock yield assigned to `E`.
+
+### Write discipline
+- `deposit()` writes only `weightInEpoch[user][currentEpoch()]`.
+- `withdraw()` writes only the current epoch's weight when principal becomes zero.
+- No function accepts an arbitrary epoch for writes.
+- When `currentEpoch()` advances, the previous epoch's mappings are unreachable for mutation.
+
+### Finalization
+`isEpochFinalized(E)` is `E < currentEpoch()`. Claims require finalization. No separate finalization transaction exists; time itself closes the epoch. This is the explicit lazy-finalization mechanism.
+
+### End-of-epoch correctness
+- A user who checked in during `E` has their last weight of `E` stored.
+- A user who did not check in during `E` has zero weight for `E`.
+- A full withdrawal during `E` zeroes the current epoch's weight.
+- A full withdrawal after `E` closes cannot touch `E`'s stored values.
+- Repeated deposits in `E` do not change the streak, so they cannot change the snapshot.
+
+---
+
+## 4. Reward Math and Solvency
+
+```text
+share(E) = floor(rewardPoolInEpoch[E] * weightInEpoch[user][E] / totalWeightInEpoch[E])
+```
+
+- `Math.mulDiv` is used to avoid intermediate overflow.
+- `sum(shares) <= rewardPoolInEpoch[E]`; the difference is dust.
+- `totalRewardPool` = yield funded minus reward amounts already claimed. It includes dust and any pool that became unallocatable.
+- Invariants:
+  - `totalPrincipal == Σ principalOf(user)`
+  - `usdc.balanceOf(this) >= totalPrincipal + totalRewardPool`
+  - `totalWeight == Σ weightOf(user)` for all users in the test fixture
+  - no claim changes `totalPrincipal` or any principal
+- A zero-weight epoch is never funded (`addMockYield` reverts) and a zero-weight snapshot always yields zero.
+
+### Known edge
+If yield is funded in an epoch and every participant fully withdraws before the epoch closes, the pool has no beneficiaries. The funds remain in `totalRewardPool` and are backed by the contract balance, but are not redistributed. This is documented rather than hidden behind an admin rescue.
+
+---
+
+## 5. Claim Behavior and Frontend Compatibility
+
+| Function | Behavior |
+|---|---|
+| `claimReward()` | Claims the latest finalized epoch (`currentEpoch() - 1`). Reverts if no epoch is finalized, no reward, or already claimed. |
+| `claimRewardFor(uint64 epoch)` | Claims a specific finalized epoch. Older rewards remain claimable indefinitely. |
+| `rewardOf(user)` | Reward for the latest finalized epoch only. |
+| `rewardInEpoch(user, epoch)` | Reward for a specific finalized epoch. |
+| `streakOf(user)` | Stored streak (0 after full withdrawal). |
+| `effectiveStreakOf(user)` | 0 if principal is 0 or at least one full epoch has been missed; otherwise the stored streak. |
+| `weightOf(user)` | Cached active weight. |
+| `totalWeight` | Cached sum of user weights. Epoch snapshots are authoritative for rewards. |
+
+`apps/web/lib/contracts.ts` expects `principalOf`, `streakOf`, `rewardOf`, `deposit`, `withdraw`, and `claimReward`. All signatures remain compatible. `claimRewardFor`, `addMockYield`, `rewardInEpoch`, `effectiveStreakOf`, and the epoch views are available for Member B to add when needed.
+
+---
+
+## 6. Access Control
+
+- `deposit` / `withdraw`: any user for their own principal.
+- `claimReward` / `claimRewardFor`: any user for their own reward.
+- `addMockYield`: only `yieldProvider` (deployer/demo account).
+- `MockUSDC.mint`: only the immutable deployer minter.
+- No owner, pause, upgrade, rescue, blacklist, or fee switch.
+
+---
+
+## 7. Deferred / Out of MVP Scope
+
+- NFT badges, Privy, Aave/Benqi, ERC-4626, agent wallets, shared streaks, custom L1.
+- Production-grade principal-weighted or minimum-lock eligibility (the MVP remains `weight = streak`).
+- A UI that paginates or aggregates historical epoch rewards beyond the latest finalized epoch.
+
+---
+
+## 8. Verification
+
+- `forge fmt --check`: pass.
+- `forge build --sizes`: pass.
+- `forge test -vvv`: **103 tests passed, 0 failed, 0 skipped**.
+- Two invariant suites: 128 runs each, 4,096 calls, 0 reverts.
+- Fuji deployment: **not performed**; requires explicit authorization and a funded Dev Wallet.

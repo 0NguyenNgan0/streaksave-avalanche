@@ -7,6 +7,8 @@
 
 **Update 16/11/2026:** principal accounting is implemented in `contracts/src/StreakSavings.sol`. Streak and reward layers remain blocked on the decisions in `docs/BL-DECISIONS-PROPOSAL.md`.
 
+**Update 18/11/2026:** BR-01..BR-06 were confirmed. The final implementation uses Model A (epoch-scoped pot), per-epoch weight snapshots, and the claim semantics documented in `docs/SMART-CONTRACT-ARCHITECTURE.md`. This document remains as design history; the architecture and technical-decision documents are authoritative for the shipped code.
+
 Labels used below:
 
 - **CONFIRMED** — stated in the execution plan.
