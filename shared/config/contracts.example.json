@@ -1,0 +1,10 @@
+{
+  "network": "avalanche-fuji",
+  "chainId": 43113,
+  "mockUSDC": "",
+  "streakSavings": "",
+  "epochDuration": "",
+  "yieldProvider": "",
+  "deployedAt": "",
+  "deploymentCommit": ""
+}
