@@ -137,6 +137,15 @@ contract Deploy is Script {
         if (savings.totalPrincipal() != 0) {
             revert Deploy__VerificationFailed("StreakSavings totalPrincipal != 0");
         }
+        if (savings.totalWeight() != 0) {
+            revert Deploy__VerificationFailed("StreakSavings totalWeight != 0");
+        }
+        if (savings.totalRewardPool() != 0) {
+            revert Deploy__VerificationFailed("StreakSavings totalRewardPool != 0");
+        }
+        if (savings.yieldProvider() != deployer) {
+            revert Deploy__VerificationFailed("StreakSavings yieldProvider != deployer");
+        }
         if (savings.currentEpoch() != 0) {
             revert Deploy__VerificationFailed("StreakSavings initial epoch != 0");
         }

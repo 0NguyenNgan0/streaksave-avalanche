@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title StreakAccountingMath
 /// @notice Pure mathematical helpers for confirmed StreakSave MVP rules.
@@ -28,8 +29,8 @@ library StreakAccountingMath {
     /// @notice Thrown when `currentEpoch` precedes `lastDepositEpoch`.
     error StreakAccountingMath__BackwardEpoch(uint64 lastDepositEpoch, uint64 currentEpoch);
 
-    /// @notice Thrown when attempting to evaluate a same-epoch streak transition before BL-01 is approved.
-    error StreakAccountingMath__UnapprovedSameEpochRule();
+    /// @notice Thrown when a relation value is outside the supported enum.
+    error StreakAccountingMath__InvalidEpochRelation();
 
     /// @notice Thrown when subtracting `oldUserWeight` would underflow `currentTotalWeight`.
     error StreakAccountingMath__WeightUnderflow(uint256 currentTotalWeight, uint256 oldUserWeight);
@@ -65,17 +66,18 @@ library StreakAccountingMath {
         return EpochRelation.MissedEpoch;
     }
 
-    /// @notice Applies only the streak transitions explicitly confirmed by MVP Execution Plan v3 §4.3.
-    /// @dev Reverts on `EpochRelation.SameEpoch` because BL-01 is not yet approved.
+    /// @notice Applies the confirmed streak transitions from BR-01 and MVP Execution Plan v3 §4.3.
+    /// @dev A repeated deposit in the same epoch is principal-only and never increments the streak.
     function computeConfirmedStreakTransition(uint64 currentStreak, EpochRelation relation)
         internal
         pure
         returns (uint64)
     {
         if (relation == EpochRelation.FirstDeposit) return 1;
+        if (relation == EpochRelation.SameEpoch) return currentStreak;
         if (relation == EpochRelation.ConsecutiveEpoch) return currentStreak + 1;
         if (relation == EpochRelation.MissedEpoch) return 1;
-        revert StreakAccountingMath__UnapprovedSameEpochRule();
+        revert StreakAccountingMath__InvalidEpochRelation();
     }
 
     /// @notice Updates global weight using the mandatory `-oldWeight + newWeight` rule (Plan §16.4).
@@ -98,7 +100,7 @@ library StreakAccountingMath {
     {
         if (totalWeight == 0) revert StreakAccountingMath__NoActiveWeight();
         if (userWeight == 0 || epochRewardPool == 0) return 0;
-        return (epochRewardPool * userWeight) / totalWeight;
+        return Math.mulDiv(epochRewardPool, userWeight, totalWeight);
     }
 
     /// @notice Computes the `accRewardPerWeight` increment for a yield addition (Model B).
@@ -109,7 +111,7 @@ library StreakAccountingMath {
     {
         if (precision == 0) revert StreakAccountingMath__InvalidPrecision();
         if (totalWeight == 0) revert StreakAccountingMath__NoActiveWeight();
-        return (yieldAmount * precision) / totalWeight;
+        return Math.mulDiv(yieldAmount, precision, totalWeight);
     }
 
     /// @notice Computes pending reward from accumulator state and user checkpoint debt (Model B).
@@ -119,7 +121,7 @@ library StreakAccountingMath {
         returns (uint256)
     {
         if (precision == 0) revert StreakAccountingMath__InvalidPrecision();
-        uint256 accumulated = (userWeight * accRewardPerWeight) / precision;
+        uint256 accumulated = Math.mulDiv(userWeight, accRewardPerWeight, precision);
         if (rewardDebt > accumulated) {
             revert StreakAccountingMath__RewardDebtExceedsAccrued(accumulated, rewardDebt);
         }
