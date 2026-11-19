@@ -1,0 +1,43 @@
+Network: Avalanche Fuji Testnet
+
+Chain ID: 43113
+
+Deployer:
+0x8986EC1B5E6Ca6Ceeb5ea608E8BA718b72D7Fd67
+
+Contract addresses:
+- MockUSDC: 0x1aaB5693678b18753dCFD5096f497031c1A1f126
+- StreakSavings: 0xE71Ae741c3bEe9f7F21057d825FE7dA8984406f9
+
+Transaction hashes:
+Giao dịch	Hash
+Deploy MockUSDC	0xb0af271c7c1e77d08a6aa113a75343de2352cc825f9ffd2b9bd1ea898d14d825
+Mint 1,000 MockUSDC	0x775f53f6f994dd175ddfbc9d57e4f9cec23d50aa908e4eb93a8170591cd8ff2c
+Deploy StreakSavings	0x745a71eb4597f50e976160835c8f8088a1867f07401c349a305ea719a40f9d05
+
+Các công việc cần làm : 
+1.Tích hợp smart contract
+
+	Sử dụng đúng hai contract addresses ở trên.
+	Import ABI của MockUSDC và StreakSavings từ artifacts Foundry.
+	Cấu hình frontend kết nối Avalanche Fuji.
+	Không hardcode private key hoặc đưa private key vào frontend.
+
+2.Hoàn thiện các chức năng frontend
+
+	Connect Wallet: kết nối MetaMask và kiểm tra đúng network.
+	Approve: cho phép StreakSavings sử dụng MockUSDC.
+	Deposit: nạp MockUSDC vào StreakSavings.
+	Dashboard: đọc và hiển thị principal, streak, weight, epoch và reward.
+	Claim Reward: tích hợp claimRewardFor() và hiển thị trạng thái giao dịch.
+	Yield: tích hợp addMockYield() nếu giao diện có chức năng quản lý yield provider.
+	Withdraw: thực hiện và hiển thị kết quả rút tiền.
+
+3. Đồng bộ dữ liệu và logic
+
+	Cần chú ý các hàm:
+		effectiveStreakOf()
+		rewardInEpoch()
+		claimRewardFor()
+		addMockYield()
+		Các hàm đọc epoch và countdown.
