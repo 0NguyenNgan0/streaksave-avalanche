@@ -8,8 +8,8 @@ StreakSave is a behavioral-savings MVP built for **Avalanche UniHack 2026**. On 
 
 - Implemented: wallet connection (injected Core Wallet/MetaMask), Dashboard, Deposit, Rewards, Withdraw, Fuji network switch, USDC approval, on-chain reads/writes, transaction feedback.
 - Implemented in Solidity: test token, principal accounting, configurable epoch clock, check-in streak, per-epoch weight snapshots, provider-funded mock rewards and claims.
-- The frontend and shared ABI compatibility checks, TypeScript typecheck, and Next.js production build passed locally on the integration branch (reported 19 Nov 2026). The contract author's CI separately reported 103 passing Foundry tests. **Those results are not a full Fuji E2E pass.**
-- **Fuji contract addresses, live-app URL and E2E transaction hashes are pending verification**. Do not consider deployment or TS-19 complete until links and test evidence are recorded in [`docs/TS-19-EVIDENCE.md`](docs/TS-19-EVIDENCE.md).
+- The frontend and shared ABI compatibility checks, TypeScript typecheck, and Next.js production build passed locally on the integration branch (reported 19 Nov 2026). Contract GitHub Actions CI reported success on the integration branch; verify the exact release SHA before final sign-off. **Those results are not a full Fuji E2E pass.**
+- **Fuji deployment and read-only calls verified; signed E2E transaction evidence and a verified public frontend URL are still pending.** See [`docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md`](docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md) and [`docs/TS-19-EVIDENCE.md`](docs/TS-19-EVIDENCE.md).
 
 ## MVP flow
 
@@ -69,12 +69,12 @@ Copy-Item .env.example .env.local
 Populate **only public addresses** in `apps/web/.env.local` **after Fuji deployment**:
 
 ```dotenv
-NEXT_PUBLIC_STREAK_CONTRACT=<deployed StreakSavings contract address>
-NEXT_PUBLIC_USDC_CONTRACT=<deployed MockUSDC token address>
+NEXT_PUBLIC_STREAK_CONTRACT=0xE71Ae741c3bEe9f7F21057d825FE7dA8984406f9
+NEXT_PUBLIC_USDC_CONTRACT=0x1aaB5693678b18753dCFD5096f497031c1A1f126
 NEXT_PUBLIC_FUJI_RPC_URL=https://api.avax-test.network/ext/bc/C/rpc
 ```
 
-Remove the angle brackets and enter valid `0x` addresses. Do **not** put any private key or mnemonic in `NEXT_PUBLIC_*` variables. Run:
+These are public Fuji testnet addresses. Never put private keys or recovery phrases in `NEXT_PUBLIC_*` variables. Run:
 
 ```powershell
 npm run dev
@@ -121,21 +121,20 @@ See [`.github/workflows/contracts.yml`](.github/workflows/contracts.yml) for CI.
 - **Network:** Avalanche Fuji C-Chain, chain ID `43113`.
 - **RPC:** `https://api.avax-test.network/ext/bc/C/rpc`.
 - **Explorer:** https://explorer-test.avax.network/c-chain
-- **Demo deployment settings proposed:** `EPOCH_DURATION=60`, `INITIAL_DEMO_MINT=1000000000` raw token units (1,000 MockUSDC with 6 decimals).
-- **Smart contract:** `StreakSavings` — **PENDING ADDRESS**.
-- **Test token:** `MockUSDC` — **PENDING ADDRESS**.
-- **Provider:** Deployer account is the immutable `yieldProvider` and MockUSDC minter (address **PENDING**).
-- **Live frontend:** **PENDING VERIFIED URL**.
+- **Observed on Fuji (19 Nov 2026):** `epochDuration() = 60` seconds, MockUSDC `decimals() = 6`, `usdc()` links to MockUSDC, and both contracts have bytecode (read-only checks).
+- **StreakSavings:** `0xE71Ae741c3bEe9f7F21057d825FE7dA8984406f9`.
+- **MockUSDC:** `0x1aaB5693678b18753dCFD5096f497031c1A1f126`.
+- **Deployer / confirmed `yieldProvider()`:** `0x8986EC1B5E6Ca6Ceeb5ea608E8BA718b72D7Fd67`.
+- **Initial mint:** 1,000 test MockUSDC according to the deployment record; read-only balance at deployer was 1,000 at test time.
+- **Live frontend URL:** **NOT YET VERIFIED**.
 
-Once deployed, replace the *pending status in the published documentation* with validated links/addresses; also fill in [`docs/TS-19-EVIDENCE.md`](docs/TS-19-EVIDENCE.md). Do not put unverified addresses in source code.
-
-Full deployment instructions and post-deploy checks: [`docs/FUJI-DEPLOYMENT.md`](docs/FUJI-DEPLOYMENT.md). **Only the authorized deployer should broadcast transactions; never share deployment keys in chat, logs or PRs.**
+Deployment hashes: [`contracts/FUJI_DEPLOYMENT_RECORD.txt`](contracts/FUJI_DEPLOYMENT_RECORD.txt). CLI evidence: [`docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md`](docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md). **No signed Fuji end-to-end user transaction flow has been verified.** Never put private keys or recovery phrases in the repository.
 
 ## TS-19: Fresh wallet E2E and QA
 
 Follow the executable testing protocol in [`docs/TS-19-FRESH-WALLET-QA.md`](docs/TS-19-FRESH-WALLET-QA.md). Record verified chain, contracts, account roles, observed balances, transaction hashes, negative tests and reviewer sign-off in [`docs/TS-19-EVIDENCE.md`](docs/TS-19-EVIDENCE.md). Optional local preflight: `powershell -ExecutionPolicy Bypass -File .\scripts\ts19-preflight.ps1`.
 
-**Definition of done:** fresh wallet can complete Connect → fund test token → Approve → Deposit → mock yield funded by authorized provider → finalized reward → Claim → Withdraw, and edge cases (reject, insufficient balance, repeated action, streak reset, principal accounting) are verified. Git/ABI/build checks alone are **not** E2E.
+**Definition of done:** fresh wallet can complete Connect â†’ fund test token â†’ Approve â†’ Deposit â†’ mock yield funded by authorized provider â†’ finalized reward â†’ Claim â†’ Withdraw, and edge cases (reject, insufficient balance, repeated action, streak reset, principal accounting) are verified. Git/ABI/build checks alone are **not** E2E.
 
 ## Responsible scope and security
 
@@ -153,4 +152,4 @@ Follow the executable testing protocol in [`docs/TS-19-FRESH-WALLET-QA.md`](docs
 - [Submission checklist](docs/SUBMISSION_CHECKLIST.md)
 - [Contract security review](docs/SMART-CONTRACT-SECURITY-REVIEW.md)
 
-**Team Dimple · Avalanche UniHack 2026**
+**Team Dimple Â· Avalanche UniHack 2026**
