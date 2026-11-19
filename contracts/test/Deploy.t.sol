@@ -25,6 +25,20 @@ contract DeployTest is Test {
         deployScript.deployContracts(0, 60, address(0), 0, true);
     }
 
+    function test_Deploy_RunReadsHexPrivateKeyFromEnvironment() public {
+        vm.setEnv("DEPLOYER_PRIVATE_KEY", "0xA11CE");
+        vm.setEnv("EPOCH_DURATION", "60");
+        vm.setEnv("INITIAL_DEMO_MINT", "0");
+        vm.setEnv("MOCK_USDC_ADDRESS", "");
+        vm.setEnv("ALLOW_LOCAL_CHAIN", "false");
+
+        vm.chainId(1);
+
+        vm.expectRevert(abi.encodeWithSelector(Deploy.Deploy__UnsupportedChainId.selector, 1));
+
+        deployScript.run();
+    }
+
     function test_Deploy_RevertsOnUnsupportedChainId() public {
         vm.chainId(1);
         vm.expectRevert(abi.encodeWithSelector(Deploy.Deploy__UnsupportedChainId.selector, 1));
