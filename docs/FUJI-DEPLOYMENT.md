@@ -12,13 +12,41 @@
 ## 1. Gate Status
 
 > [!IMPORTANT]
-> The contract implementation is complete and locally verified (103 tests). **No Fuji deployment has been performed.** A broadcast requires:
+> The contract implementation is complete and locally verified (103 tests). **No Fuji deployment has been performed.** On 19/11/2026 the Fuji dry run passed, but the real broadcast is **BLOCKED** because `contracts/.env` / `DEPLOYER_PRIVATE_KEY` are absent and no funded deployer wallet is configured in this environment. A broadcast requires:
 > 1. explicit user authorization;
 > 2. a dedicated, funded Fuji Dev Wallet;
 > 3. `contracts/.env` populated locally (never committed);
 > 4. a successful dry-run simulation.
 
 The deployer account becomes both the `MockUSDC` minter and the immutable `StreakSavings.yieldProvider`.
+
+### 1.1 Readiness audit — 19/11/2026
+
+| Check | Result |
+|---|---|
+| Source branch | `feature/principal-accounting` |
+| Member A contract commit | `b6055f2` |
+| Integration copy | `origin/feature/member-c-integration` contains `b6055f2`; contract sources and both ABIs are byte-identical |
+| `dev` / `main` | Still at `8ac875c`; contracts are not merged into `dev` or `main` |
+| PR | PR #1 head is `b6055f2`; not merged |
+| Fuji RPC | Reachable at `https://api.avax-test.network/ext/bc/C/rpc` |
+| Fuji chain ID | Verified `43113` |
+| Dry run | **Passed** with a public, unfunded test key; no broadcast |
+| Dry-run parameters | `EPOCH_DURATION=60`, `INITIAL_DEMO_MINT=1,000,000,000` (1,000 USDC), fresh MockUSDC |
+| Deployer credentials | **Missing** — no `contracts/.env`, no `DEPLOYER_PRIVATE_KEY` in the environment |
+| Funded wallet | **Not configured**; wallet balance cannot be checked without an address |
+| Broadcast | **Not executed** |
+
+The dry-run addresses are simulation-only and are not deployment records. Do not use them in the frontend.
+
+### 1.2 Unblock checklist
+
+1. Create a dedicated Fuji Dev Wallet and fund it from the Avalanche Fuji faucet.
+2. Copy `contracts/.env.example` to `contracts/.env` locally.
+3. Set `DEPLOYER_PRIVATE_KEY`, `FUJI_RPC_URL`, `EPOCH_DURATION=60`, `INITIAL_DEMO_MINT=1000000000`, and leave `MOCK_USDC_ADDRESS` empty.
+4. Never print, commit, or share the private key.
+5. Confirm the wallet balance with `cast balance <deployer-address> --rpc-url $env:FUJI_RPC_URL`.
+6. Re-run the dry run, then obtain explicit owner authorization before adding `--broadcast`.
 
 ---
 
@@ -138,7 +166,8 @@ Coordinate `shared/abi/` and `shared/config/contracts.ts` with Member C. Do not 
 
 | Field | Value |
 |---|---|
-| Deployment status | **Not deployed** (awaiting explicit authorization + funded `.env`) |
+| Deployment status | **Blocked — no local deployer credentials (19/11/2026)** |
+| Approved contract source | `b6055f2` (`feature/principal-accounting`; identical copy in `feature/member-c-integration`) |
 | Network | Avalanche Fuji C-Chain (`43113`) |
 | MockUSDC address | _TBD after broadcast_ |
 | StreakSavings address | _TBD after broadcast_ |
@@ -147,3 +176,4 @@ Coordinate `shared/abi/` and `shared/config/contracts.ts` with Member C. Do not 
 | Deployer address | _TBD_ |
 | Transaction hashes | _TBD_ |
 | Explorer links | _TBD_ |
+| Dry run | Passed 19/11/2026; no transactions sent |
