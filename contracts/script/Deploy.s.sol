@@ -24,9 +24,7 @@ contract Deploy is Script {
 
     /// @notice Entry point for `forge script`. Reads configuration from environment variables.
     function run() external returns (MockUSDC usdc, StreakSavings savings) {
-        string memory rawKey = vm.envOr("DEPLOYER_PRIVATE_KEY", string(""));
-        if (bytes(rawKey).length == 0) revert Deploy__MissingOrInvalidPrivateKey();
-        uint256 deployerPrivateKey = vm.parseUint(rawKey);
+        uint256 deployerPrivateKey = vm.envOr("DEPLOYER_PRIVATE_KEY", uint256(0));
         if (deployerPrivateKey == 0) revert Deploy__MissingOrInvalidPrivateKey();
 
         string memory rawDurationStr = vm.envOr("EPOCH_DURATION", string(""));
