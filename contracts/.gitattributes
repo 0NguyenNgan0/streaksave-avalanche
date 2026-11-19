@@ -1,0 +1,3 @@
+# Foundry's formatter expects LF. Keep the contracts tree LF on every platform
+# so `forge fmt --check` behaves identically for all team members and CI.
+* text=auto eol=lf
