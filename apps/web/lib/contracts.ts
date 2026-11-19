@@ -1,11 +1,17 @@
-import type { Abi, Address } from "viem";
+import { isAddress, type Abi, type Address } from "viem";
 import streakSavingsAbiJson from "./abi/StreakSavings.json";
 import mockUsdcAbiJson from "./abi/MockUSDC.json";
 
-export const STREAK_CONTRACT = process.env.NEXT_PUBLIC_STREAK_CONTRACT as Address | undefined;
-export const USDC_CONTRACT = process.env.NEXT_PUBLIC_USDC_CONTRACT as Address | undefined;
-export const contractsConfigured = Boolean(STREAK_CONTRACT && USDC_CONTRACT);
+function configuredAddress(value: string | undefined): Address | undefined {
+  return value && isAddress(value) && value !== "0x0000000000000000000000000000000000000000"
+    ? (value as Address)
+    : undefined;
+}
 
-// Synced from Member A exported ABI.
+export const STREAK_CONTRACT = configuredAddress(process.env.NEXT_PUBLIC_STREAK_CONTRACT);
+export const USDC_CONTRACT = configuredAddress(process.env.NEXT_PUBLIC_USDC_CONTRACT);
+export const contractsConfigured = Boolean(STREAK_CONTRACT && USDC_CONTRACT && STREAK_CONTRACT !== USDC_CONTRACT);
+
+// ABI files are copied from shared/abi by the existing integration workflow.
 export const streakSavingsAbi = streakSavingsAbiJson as Abi;
 export const erc20Abi = mockUsdcAbiJson as Abi;
