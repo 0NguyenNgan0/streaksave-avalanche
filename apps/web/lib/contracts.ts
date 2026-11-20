@@ -1,3 +1,4 @@
+
 import type { Address } from "viem";
 
 export const STREAK_CONTRACT = process.env.NEXT_PUBLIC_STREAK_CONTRACT as Address | undefined;
@@ -5,7 +6,6 @@ export const USDC_CONTRACT = process.env.NEXT_PUBLIC_USDC_CONTRACT as Address | 
 
 export const contractsConfigured = Boolean(STREAK_CONTRACT && USDC_CONTRACT);
 
-// Expected Member A interface. If names differ, change ONLY this file + hook call sites.
 export const erc20Abi = [
   {
     type: "function",
@@ -60,6 +60,23 @@ export const streakSavingsAbi = [
   },
   {
     type: "function",
+    name: "currentEpoch",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint64" }],
+  },
+  {
+    type: "function",
+    name: "rewardInEpoch",
+    stateMutability: "view",
+    inputs: [
+      { name: "user", type: "address" },
+      { name: "epoch", type: "uint64" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
     name: "deposit",
     stateMutability: "nonpayable",
     inputs: [{ name: "amount", type: "uint256" }],
@@ -70,6 +87,13 @@ export const streakSavingsAbi = [
     name: "claimReward",
     stateMutability: "nonpayable",
     inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "claimRewardFor",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "epoch", type: "uint64" }],
     outputs: [],
   },
   {
