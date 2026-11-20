@@ -14,9 +14,15 @@ export function parsePositiveUsdc(input: string): bigint | undefined {
   }
 }
 
-export function usdcAmountError(input: string, available?: bigint): string | undefined {
+export function usdcAmountError(
+  input: string,
+  available?: bigint,
+  availableLabel = "số dư khả dụng",
+): string | undefined {
   const amount = parsePositiveUsdc(input);
   if (amount === undefined) return "Nhập số USDC lớn hơn 0, tối đa 6 chữ số thập phân.";
-  if (available !== undefined && amount > available) return "Số tiền vượt quá số dư khả dụng.";
+  if (available !== undefined && amount > available) {
+    return `Số tiền vượt quá ${availableLabel}.`;
+  }
   return undefined;
 }

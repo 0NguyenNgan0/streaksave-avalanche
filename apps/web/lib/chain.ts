@@ -1,15 +1,16 @@
 import { defineChain } from "viem";
 
+const fujiRpcUrl =
+  process.env.NEXT_PUBLIC_FUJI_RPC_URL?.trim() ||
+  "https://api.avax-test.network/ext/bc/C/rpc";
+
 export const fuji = defineChain({
   id: 43113,
   name: "Avalanche Fuji C-Chain",
   nativeCurrency: { name: "Avalanche", symbol: "AVAX", decimals: 18 },
   rpcUrls: {
     default: {
-      http: [
-        process.env.NEXT_PUBLIC_FUJI_RPC_URL ||
-          "https://api.avax-test.network/ext/bc/C/rpc",
-      ],
+      http: [fujiRpcUrl],
     },
   },
   blockExplorers: {

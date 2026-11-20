@@ -11,6 +11,12 @@ export default function RewardsPage() {
 
   const busy = api.actionState === "claiming";
   const totalClaimable = formatUnits(api.raw.totalClaimable, 6);
+  const totalClaimableDisplay =
+    api.configured && api.address && api.correctChain && api.hasScanned
+      ? Number(totalClaimable).toLocaleString(undefined, {
+          maximumFractionDigits: 6,
+        })
+      : "—";
 
   return (
     <AppShell>
@@ -31,21 +37,31 @@ export default function RewardsPage() {
             </div>
 
             <div className="stat-label">
-              Tổng phần thưởng chưa nhận
+              Tổng có thể nhận (các epoch đã quét)
             </div>
 
             <div className="stat-value" style={{ fontSize: 42 }}>
-              {Number(totalClaimable).toLocaleString(undefined, {
-                maximumFractionDigits: 6,
-              })}{" "}
-              USDC
+              {totalClaimableDisplay} USDC
             </div>
 
             <p className="subtle">
-              Reward được tổng hợp từ các epoch đã kết thúc.
-              Đang ở epoch {api.values.epoch}; còn{" "}
-              {api.values.epochCountdown} tới epoch tiếp theo.
+              Reward được tổng hợp từ các epoch đã kết thúc trong phạm vi
+              đã quét. Đang ở epoch {api.values.epoch}; còn{" "}
+              {api.values.epochCountdown} giây tới epoch tiếp theo.
             </p>
+
+            {!api.configured && (
+              <div className="notice warn" role="alert">
+                Chưa cấu hình địa chỉ contract hợp lệ trong .env.local.
+                Các số liệu on-chain đang tạm ẩn.
+              </div>
+            )}
+
+            {api.readError && (
+              <div className="notice warn" role="alert">
+                {api.readError}
+              </div>
+            )}
 
             {api.address && !api.correctChain && (
               <div className="notice warn">
@@ -61,9 +77,37 @@ export default function RewardsPage() {
 
         <section className="card">
           <div className="eyebrow">Lịch sử phần thưởng</div>
-          <h2 className="section-title">
-            Phần thưởng theo epoch
-          </h2>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <h2 className="section-title">Phần thưởng theo epoch</h2>
+            <button
+              type="button"
+              className="button secondary"
+              disabled={
+                api.scanning ||
+                busy ||
+                !api.configured ||
+                !api.address ||
+                !api.correctChain
+              }
+              onClick={() => void api.refresh()}
+            >
+              {api.scanning ? "Đang tải..." : "Làm mới"}
+            </button>
+          </div>
+
+          {!api.configured && (
+            <p className="subtle">
+              Cần cấu hình contract trong .env.local trước khi tải lịch sử.
+            </p>
+          )}
 
           {!api.address && (
             <p className="subtle">
@@ -85,13 +129,28 @@ export default function RewardsPage() {
 
           {api.scanError && (
             <p className="notice warn" role="alert">
-              {api.scanError}
+              Không tải được lịch sử phần thưởng: {api.scanError}
             </p>
           )}
 
           {!api.scanning &&
+            api.readsReady &&
             api.address &&
             api.correctChain &&
+            api.configured &&
+            !api.hasScanned &&
+            !api.scanError && (
+              <p className="subtle">
+                Chưa tải được lịch sử phần thưởng.
+              </p>
+            )}
+
+          {!api.scanning &&
+            api.address &&
+            api.correctChain &&
+            api.configured &&
+            api.hasScanned &&
+            !api.scanError &&
             api.rewardEpochs.length === 0 && (
               <p className="subtle">
                 Chưa tìm thấy phần thưởng có thể nhận trong phạm vi đã kiểm tra.
@@ -125,6 +184,7 @@ export default function RewardsPage() {
               </div>
 
               <button
+                type="button"
                 className="button cta"
                 disabled={
                   busy ||
@@ -142,6 +202,7 @@ export default function RewardsPage() {
 
           {api.hasOlderRewards && (
             <button
+              type="button"
               className="button"
               disabled={api.scanning || busy}
               onClick={() => void api.loadOlderRewards()}

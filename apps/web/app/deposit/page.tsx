@@ -10,11 +10,13 @@ const OPTIONS = ["5", "10", "20", "50"];
 
 export default function DepositPage() {
   const [amount, setAmount] = useState("5");
-  const api = useStreakSave();
+  const api = useStreakSave({ scanRewards: false });
   const required = useMemo(() => parsePositiveUsdc(amount), [amount]);
   const needsApproval = required !== undefined && api.raw.allowance < required;
-  const inputError = usdcAmountError(amount, api.raw.balance);
-  const disabled = api.busy || !api.configured || !api.address || !api.correctChain || Boolean(inputError);
+  const inputError = api.readsReady
+    ? usdcAmountError(amount, api.raw.balance)
+    : undefined;
+  const disabled = api.busy || !api.readsReady || !api.configured || !api.address || !api.correctChain || Boolean(inputError);
 
   return (
     <AppShell>
@@ -24,6 +26,7 @@ export default function DepositPage() {
           <div><div className="stat-label">Chọn số tiền</div><div className="amounts">{OPTIONS.map((x) => <button key={x} type="button" className={`amount ${amount === x ? "active" : ""}`} disabled={api.busy} onClick={() => setAmount(x)}>{x} USDC</button>)}</div></div>
           <input className="input" aria-label="Custom amount" inputMode="decimal" value={amount} disabled={api.busy} onChange={(e) => setAmount(e.target.value)} aria-invalid={Boolean(inputError)} />
           {inputError && <div className="notice warn" role="alert">{inputError}</div>}
+          {api.readError && <div className="notice warn" role="alert">{api.readError}</div>}
           {!api.configured && <div className="notice warn">Preview mode: chưa có địa chỉ hợp lệ trong .env.local.</div>}
           {api.address && !api.correctChain && <div className="notice warn">Vui lòng chuyển ví sang Avalanche Fuji.</div>}
           <div className="next-box"><div><strong>{needsApproval ? "Bước 1/2 · Cho phép USDC" : "Bước 2/2 · Hoàn tất nạp"}</strong><div className="subtle">Chờ transaction xác nhận trước khi tiếp tục.</div></div><div style={{ fontSize: 30 }}>{needsApproval ? "🔐" : "🌱"}</div></div>

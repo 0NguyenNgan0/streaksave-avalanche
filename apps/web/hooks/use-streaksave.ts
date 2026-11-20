@@ -58,11 +58,19 @@ function formatUsdc(value: bigint): string {
 }
 
 function getErrorMessage(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const shortMessage = (error as { shortMessage?: unknown }).shortMessage;
+
+    if (typeof shortMessage === "string" && shortMessage.length > 0) {
+      return shortMessage;
+    }
+  }
+
   if (error instanceof Error) return error.message;
   return "Đã xảy ra lỗi không xác định.";
 }
 
-export function useStreakSave() {
+export function useStreakSave(options: { scanRewards?: boolean } = {}) {
   const { address, chainId, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId: fuji.id });
   const { writeContractAsync } = useWriteContract();
@@ -71,6 +79,8 @@ export function useStreakSave() {
   const correctChain = chainId === fuji.id;
   const enabled =
     configured && isConnected && !!address && correctChain;
+  const scanRewards = options.scanRewards ?? true;
+  const rewardsEnabled = enabled && scanRewards;
 
   const contractAddress = STREAK_CONTRACT as Address;
   const tokenAddress = USDC_CONTRACT as Address;
@@ -81,13 +91,21 @@ export function useStreakSave() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const [clock, setClock] = useState(0);
+  const [countdownAnchor, setCountdownAnchor] = useState<{
+    seconds: bigint;
+    at: number;
+  } | null>(null);
+
   const [rewardEpochs, setRewardEpochs] = useState<RewardEpoch[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [hasScanned, setHasScanned] = useState(false);
   const [hasOlderRewards, setHasOlderRewards] = useState(false);
   const [olderCursor, setOlderCursor] = useState<bigint | null>(null);
 
   const inFlight = useRef(false);
+  const scanRequestId = useRef(0);
 
   // Contract reads
   const principal = useReadContract({
@@ -105,7 +123,7 @@ export function useStreakSave() {
     functionName: "effectiveStreakOf",
     args: [userAddress],
     chainId: fuji.id,
-    query: { enabled },
+    query: { enabled, refetchInterval: 10_000 },
   });
 
   const reward = useReadContract({
@@ -114,7 +132,7 @@ export function useStreakSave() {
     functionName: "rewardOf",
     args: [userAddress],
     chainId: fuji.id,
-    query: { enabled },
+    query: { enabled, refetchInterval: 15_000 },
   });
 
   const balance = useReadContract({
@@ -140,7 +158,7 @@ export function useStreakSave() {
     abi: streakSavingsAbi,
     functionName: "currentEpoch",
     chainId: fuji.id,
-    query: { enabled },
+    query: { enabled, refetchInterval: 5_000 },
   });
 
   const timeUntilNextEpoch = useReadContract({
@@ -148,7 +166,7 @@ export function useStreakSave() {
     abi: streakSavingsAbi,
     functionName: "timeUntilNextEpoch",
     chainId: fuji.id,
-    query: { enabled },
+    query: { enabled, refetchInterval: 5_000 },
   });
 
   const principalValue = toBigInt(principal.data);
@@ -157,7 +175,85 @@ export function useStreakSave() {
   const balanceValue = toBigInt(balance.data);
   const allowanceValue = toBigInt(allowance.data);
   const epochValue = toBigInt(currentEpoch.data);
-  const countdownValue = toBigInt(timeUntilNextEpoch.data);
+  const countdownData =
+    timeUntilNextEpoch.data === undefined || timeUntilNextEpoch.data === null
+      ? undefined
+      : toBigInt(timeUntilNextEpoch.data);
+
+  useEffect(() => {
+    if (!enabled || countdownData === undefined) {
+      setCountdownAnchor(null);
+      return;
+    }
+
+    setCountdownAnchor({ seconds: countdownData, at: Date.now() });
+  }, [enabled, countdownData]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setClock(0);
+      return;
+    }
+
+    setClock(Date.now());
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [enabled]);
+
+  const countdownValue = useMemo(() => {
+    if (!enabled || countdownData === undefined) return undefined;
+    if (!countdownAnchor || clock === 0) return countdownData;
+
+    const elapsed = BigInt(
+      Math.max(0, Math.floor((clock - countdownAnchor.at) / 1000)),
+    );
+
+    return countdownAnchor.seconds > elapsed
+      ? countdownAnchor.seconds - elapsed
+      : 0n;
+  }, [enabled, countdownData, countdownAnchor, clock]);
+
+  const readResults = [
+    principal,
+    effectiveStreak,
+    reward,
+    balance,
+    allowance,
+    currentEpoch,
+    timeUntilNextEpoch,
+  ];
+  const readsReady =
+    enabled && readResults.every((result) => result.isSuccess);
+  const readsLoading =
+    enabled && readResults.some((result) => result.isPending);
+
+  const readError = useMemo(() => {
+    if (!enabled) return null;
+
+    const failures: Array<[string, unknown]> = [
+      ["principal", principal.error],
+      ["streak", effectiveStreak.error],
+      ["reward gần nhất", reward.error],
+      ["số dư USDC", balance.error],
+      ["allowance USDC", allowance.error],
+      ["epoch hiện tại", currentEpoch.error],
+      ["countdown", timeUntilNextEpoch.error],
+    ];
+    const failed = failures.find(([, value]) => Boolean(value));
+
+    return failed
+      ? `Không đọc được ${failed[0]} từ Fuji RPC: ${getErrorMessage(failed[1])}`
+      : null;
+  }, [
+    enabled,
+    principal.error,
+    effectiveStreak.error,
+    reward.error,
+    balance.error,
+    allowance.error,
+    currentEpoch.error,
+    timeUntilNextEpoch.error,
+  ]);
 
   const busy =
     actionState === "approving" ||
@@ -209,22 +305,34 @@ export function useStreakSave() {
     [publicClient, address, contractAddress],
   );
 
-  // Scan the latest finalized epochs.
+  // Scan the latest finalized epochs. Read the boundary fresh so a stale React
+  // Query value can never make the UI skip a newly finalized epoch.
   const scanLatest = useCallback(async () => {
-    const end = currentEpoch.data as bigint | undefined;
+    if (!rewardsEnabled || !publicClient || !address) return;
 
-    if (!enabled || end === undefined) return;
+    const requestId = ++scanRequestId.current;
 
     setScanning(true);
     setScanError(null);
+    setHasScanned(false);
 
     try {
+      const latestEpoch = (await publicClient.readContract({
+        address: contractAddress,
+        abi: streakSavingsAbi,
+        functionName: "currentEpoch",
+      })) as bigint;
+
+      if (requestId !== scanRequestId.current) return;
+
       const start =
-        end > BigInt(EPOCH_PAGE_SIZE)
-          ? end - BigInt(EPOCH_PAGE_SIZE)
+        latestEpoch > BigInt(EPOCH_PAGE_SIZE)
+          ? latestEpoch - BigInt(EPOCH_PAGE_SIZE)
           : 0n;
 
-      const found = await scanRange(start, end);
+      const found = await scanRange(start, latestEpoch);
+
+      if (requestId !== scanRequestId.current) return;
 
       setRewardEpochs(
         found.sort((a, b) => (a.epoch > b.epoch ? -1 : 1)),
@@ -232,19 +340,42 @@ export function useStreakSave() {
 
       setOlderCursor(start);
       setHasOlderRewards(start > 0n);
+      setHasScanned(true);
     } catch (scanFailure) {
+      if (requestId !== scanRequestId.current) return;
+
+      setRewardEpochs([]);
+      setOlderCursor(null);
+      setHasOlderRewards(false);
+      setHasScanned(false);
       setScanError(getErrorMessage(scanFailure));
     } finally {
-      setScanning(false);
+      if (requestId === scanRequestId.current) {
+        setScanning(false);
+      }
     }
-  }, [enabled, currentEpoch.data, scanRange]);
+  }, [
+    rewardsEnabled,
+    publicClient,
+    address,
+    contractAddress,
+    scanRange,
+  ]);
 
   // Load older epochs in pages.
   const loadOlderRewards = useCallback(async () => {
-    if (!enabled || olderCursor === null || olderCursor <= 0n) {
+    if (
+      !rewardsEnabled ||
+      !publicClient ||
+      !address ||
+      olderCursor === null ||
+      olderCursor <= 0n
+    ) {
       setHasOlderRewards(false);
       return;
     }
+
+    const requestId = ++scanRequestId.current;
 
     setScanning(true);
     setScanError(null);
@@ -257,6 +388,8 @@ export function useStreakSave() {
           : 0n;
 
       const found = await scanRange(start, end);
+
+      if (requestId !== scanRequestId.current) return;
 
       setRewardEpochs((previous) => {
         const merged = [...previous, ...found];
@@ -274,22 +407,45 @@ export function useStreakSave() {
       setOlderCursor(start);
       setHasOlderRewards(start > 0n);
     } catch (scanFailure) {
+      if (requestId !== scanRequestId.current) return;
       setScanError(getErrorMessage(scanFailure));
     } finally {
-      setScanning(false);
+      if (requestId === scanRequestId.current) {
+        setScanning(false);
+      }
     }
-  }, [enabled, olderCursor, scanRange]);
+  }, [
+    rewardsEnabled,
+    publicClient,
+    address,
+    olderCursor,
+    scanRange,
+  ]);
+
+  // Never leave another account's rewards on screen while a new scan runs.
+  useEffect(() => {
+    scanRequestId.current += 1;
+    setRewardEpochs([]);
+    setOlderCursor(null);
+    setHasOlderRewards(false);
+    setHasScanned(false);
+    setScanError(null);
+  }, [address]);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!rewardsEnabled) {
+      scanRequestId.current += 1;
       setRewardEpochs([]);
       setOlderCursor(null);
       setHasOlderRewards(false);
+      setHasScanned(false);
+      setScanError(null);
+      setScanning(false);
       return;
     }
 
     void scanLatest();
-  }, [enabled, scanLatest]);
+  }, [rewardsEnabled, scanLatest]);
 
   // Refresh all contract reads and reward history.
   const refetchAll = useCallback(async () => {
@@ -551,20 +707,40 @@ export function useStreakSave() {
 
   const values = useMemo(
     () => ({
-      principal: formatUsdc(principalValue),
-      streak: streakValue.toString(),
-      reward: formatUsdc(rewardValue),
-      balance: formatUsdc(balanceValue),
-      epoch: epochValue.toString(),
-      epochCountdown: countdownValue.toString(),
+      principal:
+        enabled && principal.data !== undefined
+          ? formatUsdc(principalValue)
+          : "—",
+      streak:
+        enabled && effectiveStreak.data !== undefined
+          ? streakValue.toString()
+          : "—",
+      reward:
+        enabled && reward.data !== undefined ? formatUsdc(rewardValue) : "—",
+      balance:
+        enabled && balance.data !== undefined ? formatUsdc(balanceValue) : "—",
+      epoch:
+        enabled && currentEpoch.data !== undefined
+          ? epochValue.toString()
+          : "—",
+      epochCountdown:
+        enabled && countdownValue !== undefined
+          ? countdownValue.toString()
+          : "—",
     }),
     [
+      enabled,
+      principal.data,
+      effectiveStreak.data,
+      reward.data,
+      balance.data,
+      currentEpoch.data,
+      countdownValue,
       principalValue,
       streakValue,
       rewardValue,
       balanceValue,
       epochValue,
-      countdownValue,
     ],
   );
 
@@ -576,7 +752,7 @@ export function useStreakSave() {
       balance: balanceValue,
       effectiveStreak: streakValue,
       currentEpoch: epochValue,
-      secondsUntilNextEpoch: countdownValue,
+      secondsUntilNextEpoch: countdownValue ?? 0n,
       totalClaimable,
     }),
     [
@@ -604,10 +780,14 @@ export function useStreakSave() {
 
     values,
     raw,
+    readsReady,
+    readsLoading,
+    readError,
 
     rewardEpochs,
     scanning,
     scanError,
+    hasScanned,
     hasOlderRewards,
 
     approve,

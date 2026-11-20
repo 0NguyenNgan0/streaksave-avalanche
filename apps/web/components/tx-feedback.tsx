@@ -28,7 +28,7 @@ export function TxFeedback({
             ? "notice good"
             : "notice"
       }
-      role="status"
+      role={state === "error" ? "alert" : "status"}
       aria-live="polite"
     >
       <strong>

@@ -16,7 +16,9 @@ function Milestone({ label, unlocked }: { label: string; unlocked: boolean }) {
 }
 
 export default function HomePage() {
-  const { values, address, configured, correctChain } = useStreakSave();
+  const { values, address, configured, correctChain } = useStreakSave({
+    scanRewards: false,
+  });
   // Do not present fake balances or hard-coded unlocked milestones as on-chain facts.
   const data = address && configured && correctChain
     ? values
@@ -44,7 +46,7 @@ export default function HomePage() {
             </section>
             <div className="metric-grid">
               <section className="metric-card"><div className="metric-icon green">◉</div><div><div className="metric-label">Tổng đã tiết kiệm</div><div className="metric-value">{data.principal} USDC</div></div></section>
-              <section className="metric-card"><div className="metric-icon violet">🎁</div><div><div className="metric-label">Phần thưởng có thể nhận</div><div className="metric-value">{data.reward} USDC</div></div></section>
+              <section className="metric-card"><div className="metric-icon violet">🎁</div><div><div className="metric-label">Thưởng epoch đã chốt gần nhất</div><div className="metric-value">{data.reward} USDC</div></div></section>
             </div>
           </div>
         </section>
