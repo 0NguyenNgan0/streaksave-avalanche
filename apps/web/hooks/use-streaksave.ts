@@ -1,10 +1,9 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   formatUnits,
-  parseUnits,
   zeroAddress,
   type Address,
   type Hash,
@@ -15,6 +14,9 @@ import {
   useReadContract,
   useWriteContract,
 } from "wagmi";
+
+import { fuji } from "@/lib/chain";
+import { parsePositiveUsdc, USDC_DECIMALS } from "@/lib/amount";
 import {
   contractsConfigured,
   erc20Abi,
@@ -23,7 +25,6 @@ import {
   USDC_CONTRACT,
 } from "@/lib/contracts";
 
-const USDC_DECIMALS = 6;
 const EPOCH_PAGE_SIZE = 50;
 const SCAN_BATCH_SIZE = 10;
 
@@ -41,99 +42,145 @@ export type RewardEpoch = {
   amount: bigint;
 };
 
-function formatUsdc(value?: bigint) {
-  if (value === undefined) return "—";
+function toBigInt(value: unknown): bigint {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return BigInt(Math.floor(value));
+  }
+  if (typeof value === "string" && value.length > 0) {
+    return BigInt(value);
+  }
+  return 0n;
+}
 
-  const n = Number(formatUnits(value, USDC_DECIMALS));
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+function formatUsdc(value: bigint): string {
+  return formatUnits(value, USDC_DECIMALS);
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return "Đã xảy ra lỗi không xác định.";
 }
 
 export function useStreakSave() {
-  const { address } = useAccount();
-  const publicClient = usePublicClient();
+  const { address, chainId, isConnected } = useAccount();
+  const publicClient = usePublicClient({ chainId: fuji.id });
   const { writeContractAsync } = useWriteContract();
 
+  const configured = contractsConfigured;
+  const correctChain = chainId === fuji.id;
+  const enabled =
+    configured && isConnected && !!address && correctChain;
+
+  const contractAddress = STREAK_CONTRACT as Address;
+  const tokenAddress = USDC_CONTRACT as Address;
+  const userAddress = address ?? zeroAddress;
+
   const [actionState, setActionState] = useState<ActionState>("idle");
-  const [lastHash, setLastHash] = useState<Hash>();
-  const [error, setError] = useState<string>();
+  const [lastHash, setLastHash] = useState<Hash | undefined>();
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [rewardEpochs, setRewardEpochs] = useState<RewardEpoch[]>([]);
-  const [scanBefore, setScanBefore] = useState<bigint | null>(null);
   const [scanning, setScanning] = useState(false);
-  const [scanError, setScanError] = useState<string>();
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [hasOlderRewards, setHasOlderRewards] = useState(false);
+  const [olderCursor, setOlderCursor] = useState<bigint | null>(null);
 
-  const enabled = Boolean(address && contractsConfigured);
-  const user = address ?? zeroAddress;
-  const streakAddress = STREAK_CONTRACT ?? zeroAddress;
-  const usdcAddress = USDC_CONTRACT ?? zeroAddress;
+  const inFlight = useRef(false);
 
+  // Contract reads
   const principal = useReadContract({
-    address: streakAddress,
+    address: contractAddress,
     abi: streakSavingsAbi,
     functionName: "principalOf",
-    args: [user],
+    args: [userAddress],
+    chainId: fuji.id,
     query: { enabled },
   });
 
-  const streak = useReadContract({
-    address: streakAddress,
+  const effectiveStreak = useReadContract({
+    address: contractAddress,
     abi: streakSavingsAbi,
-    functionName: "streakOf",
-    args: [user],
+    functionName: "effectiveStreakOf",
+    args: [userAddress],
+    chainId: fuji.id,
     query: { enabled },
   });
 
   const reward = useReadContract({
-    address: streakAddress,
+    address: contractAddress,
     abi: streakSavingsAbi,
     functionName: "rewardOf",
-    args: [user],
-    query: { enabled },
-  });
-
-  const currentEpoch = useReadContract({
-    address: streakAddress,
-    abi: streakSavingsAbi,
-    functionName: "currentEpoch",
+    args: [userAddress],
+    chainId: fuji.id,
     query: { enabled },
   });
 
   const balance = useReadContract({
-    address: usdcAddress,
+    address: tokenAddress,
     abi: erc20Abi,
     functionName: "balanceOf",
-    args: [user],
+    args: [userAddress],
+    chainId: fuji.id,
     query: { enabled },
   });
 
   const allowance = useReadContract({
-    address: usdcAddress,
+    address: tokenAddress,
     abi: erc20Abi,
     functionName: "allowance",
-    args: [user, streakAddress],
+    args: [userAddress, contractAddress],
+    chainId: fuji.id,
     query: { enabled },
   });
 
-  // Read rewards in small batches to avoid overwhelming the RPC.
-  const scanRange = useCallback(
-    async (from: bigint, to: bigint): Promise<RewardEpoch[]> => {
-      const contractAddress = STREAK_CONTRACT;
+  const currentEpoch = useReadContract({
+    address: contractAddress,
+    abi: streakSavingsAbi,
+    functionName: "currentEpoch",
+    chainId: fuji.id,
+    query: { enabled },
+  });
 
-      if (!publicClient || !address || !contractAddress) {
-        return [];
-      }
+  const timeUntilNextEpoch = useReadContract({
+    address: contractAddress,
+    abi: streakSavingsAbi,
+    functionName: "timeUntilNextEpoch",
+    chainId: fuji.id,
+    query: { enabled },
+  });
+
+  const principalValue = toBigInt(principal.data);
+  const streakValue = toBigInt(effectiveStreak.data);
+  const rewardValue = toBigInt(reward.data);
+  const balanceValue = toBigInt(balance.data);
+  const allowanceValue = toBigInt(allowance.data);
+  const epochValue = toBigInt(currentEpoch.data);
+  const countdownValue = toBigInt(timeUntilNextEpoch.data);
+
+  const busy =
+    actionState === "approving" ||
+    actionState === "depositing" ||
+    actionState === "claiming" ||
+    actionState === "withdrawing";
+
+  // Read pending reward for a specific epoch.
+  const scanRange = useCallback(
+    async (start: bigint, end: bigint): Promise<RewardEpoch[]> => {
+      if (!publicClient || !address || start >= end) return [];
 
       const found: RewardEpoch[] = [];
 
       for (
-        let batchStart = from;
-        batchStart < to;
+        let batchStart = start;
+        batchStart < end;
         batchStart += BigInt(SCAN_BATCH_SIZE)
       ) {
         const batchEnd =
-          batchStart + BigInt(SCAN_BATCH_SIZE) < to
+          batchStart + BigInt(SCAN_BATCH_SIZE) < end
             ? batchStart + BigInt(SCAN_BATCH_SIZE)
-            : to;
+            : end;
 
         const epochs: bigint[] = [];
 
@@ -143,12 +190,12 @@ export function useStreakSave() {
 
         const results = await Promise.all(
           epochs.map(async (epoch) => {
-            const amount = await publicClient.readContract({
+            const amount = (await publicClient.readContract({
               address: contractAddress,
               abi: streakSavingsAbi,
               functionName: "rewardInEpoch",
               args: [address, epoch],
-            });
+            })) as bigint;
 
             return { epoch, amount };
           }),
@@ -159,19 +206,19 @@ export function useStreakSave() {
 
       return found;
     },
-    [publicClient, address],
+    [publicClient, address, contractAddress],
   );
 
-  // Scan the latest 50 finalized epochs.
+  // Scan the latest finalized epochs.
   const scanLatest = useCallback(async () => {
-    if (!enabled || currentEpoch.data === undefined) return;
+    const end = currentEpoch.data as bigint | undefined;
+
+    if (!enabled || end === undefined) return;
 
     setScanning(true);
-    setScanError(undefined);
+    setScanError(null);
 
     try {
-      const end = currentEpoch.data;
-
       const start =
         end > BigInt(EPOCH_PAGE_SIZE)
           ? end - BigInt(EPOCH_PAGE_SIZE)
@@ -179,27 +226,31 @@ export function useStreakSave() {
 
       const found = await scanRange(start, end);
 
-      setRewardEpochs(found);
-      setScanBefore(start > 0n ? start : 0n);
-    } catch (e) {
-      setScanError(
-        e instanceof Error ? e.message : "Could not load reward epochs.",
+      setRewardEpochs(
+        found.sort((a, b) => (a.epoch > b.epoch ? -1 : 1)),
       );
+
+      setOlderCursor(start);
+      setHasOlderRewards(start > 0n);
+    } catch (scanFailure) {
+      setScanError(getErrorMessage(scanFailure));
     } finally {
       setScanning(false);
     }
   }, [enabled, currentEpoch.data, scanRange]);
 
-  // Load another 50 older epochs.
+  // Load older epochs in pages.
   const loadOlderRewards = useCallback(async () => {
-    if (scanBefore === null || scanBefore === 0n || scanning) return;
+    if (!enabled || olderCursor === null || olderCursor <= 0n) {
+      setHasOlderRewards(false);
+      return;
+    }
 
     setScanning(true);
-    setScanError(undefined);
+    setScanError(null);
 
     try {
-      const end = scanBefore;
-
+      const end = olderCursor;
       const start =
         end > BigInt(EPOCH_PAGE_SIZE)
           ? end - BigInt(EPOCH_PAGE_SIZE)
@@ -209,213 +260,363 @@ export function useStreakSave() {
 
       setRewardEpochs((previous) => {
         const merged = [...previous, ...found];
+        const unique = new Map<string, RewardEpoch>();
 
-        const unique = new Map(
-          merged.map((item) => [item.epoch.toString(), item]),
-        );
+        for (const item of merged) {
+          unique.set(item.epoch.toString(), item);
+        }
 
-        return [...unique.values()].sort((a, b) =>
-          a.epoch > b.epoch ? -1 : a.epoch < b.epoch ? 1 : 0,
+        return Array.from(unique.values()).sort((a, b) =>
+          a.epoch > b.epoch ? -1 : 1,
         );
       });
 
-      setScanBefore(start);
-    } catch (e) {
-      setScanError(
-        e instanceof Error ? e.message : "Could not load older rewards.",
-      );
+      setOlderCursor(start);
+      setHasOlderRewards(start > 0n);
+    } catch (scanFailure) {
+      setScanError(getErrorMessage(scanFailure));
     } finally {
       setScanning(false);
     }
-  }, [scanBefore, scanning, scanRange]);
+  }, [enabled, olderCursor, scanRange]);
 
-  // Reset and scan when the connected wallet or current epoch changes.
   useEffect(() => {
-    setRewardEpochs([]);
-    setScanBefore(null);
-
-    if (enabled && currentEpoch.data !== undefined) {
-      void scanLatest();
-    }
-  }, [enabled, address, currentEpoch.data, scanLatest]);
-
-  async function wait(hash: Hash) {
-    setLastHash(hash);
-
-    if (!publicClient) {
-      throw new Error("Fuji public client is unavailable.");
+    if (!enabled) {
+      setRewardEpochs([]);
+      setOlderCursor(null);
+      setHasOlderRewards(false);
+      return;
     }
 
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    void scanLatest();
+  }, [enabled, scanLatest]);
 
-    if (receipt.status !== "success") {
-      throw new Error("Transaction reverted.");
-    }
-  }
-
-  async function refetchAll() {
-    await Promise.all([
+  // Refresh all contract reads and reward history.
+  const refetchAll = useCallback(async () => {
+    await Promise.allSettled([
       principal.refetch(),
-      streak.refetch(),
+      effectiveStreak.refetch(),
       reward.refetch(),
-      currentEpoch.refetch(),
       balance.refetch(),
       allowance.refetch(),
+      currentEpoch.refetch(),
+      timeUntilNextEpoch.refetch(),
     ]);
 
     await scanLatest();
-  }
+  }, [
+    principal,
+    effectiveStreak,
+    reward,
+    balance,
+    allowance,
+    currentEpoch,
+    timeUntilNextEpoch,
+    scanLatest,
+  ]);
 
-  function guard() {
-    if (!address) {
-      throw new Error("Connect your wallet first.");
+  // Common transaction handler.
+  const run = useCallback(
+    async (
+      nextState: ActionState,
+      action: () => Promise<Hash>,
+      successMessage: string,
+    ) => {
+      if (inFlight.current) return;
+
+      if (!configured) {
+        setError("Chưa cấu hình địa chỉ smart contract.");
+        setActionState("error");
+        return;
+      }
+
+      if (!isConnected || !address) {
+        setError("Vui lòng kết nối ví trước.");
+        setActionState("error");
+        return;
+      }
+
+      if (!correctChain) {
+        setError("Vui lòng chuyển ví sang Avalanche Fuji Testnet.");
+        setActionState("error");
+        return;
+      }
+
+      if (!publicClient) {
+        setError("Không thể kết nối Fuji RPC.");
+        setActionState("error");
+        return;
+      }
+
+      inFlight.current = true;
+      setActionState(nextState);
+      setError(null);
+      setNotice(null);
+      setLastHash(undefined);
+
+      try {
+        const hash = await action();
+        setLastHash(hash);
+
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash,
+        });
+
+        if (receipt.status !== "success") {
+          throw new Error("Giao dịch thất bại trên blockchain.");
+        }
+
+        setActionState("success");
+        setNotice(successMessage);
+
+        await refetchAll();
+      } catch (transactionError) {
+        setActionState("error");
+        setError(getErrorMessage(transactionError));
+      } finally {
+        inFlight.current = false;
+      }
+    },
+    [
+      configured,
+      isConnected,
+      address,
+      correctChain,
+      publicClient,
+      refetchAll,
+    ],
+  );
+
+  const getAmount = useCallback((amount: string): bigint => {
+    const parsed = parsePositiveUsdc(amount);
+
+    if (typeof parsed !== "bigint" || parsed <= 0n) {
+      throw new Error("Số tiền USDC không hợp lệ.");
     }
 
-    if (!contractsConfigured || !STREAK_CONTRACT || !USDC_CONTRACT) {
-      throw new Error("Contract addresses are not configured yet.");
-    }
-  }
+    return parsed;
+  }, []);
 
-  async function run(state: ActionState, fn: () => Promise<void>) {
-    try {
-      setError(undefined);
-      setActionState(state);
+  // Approve USDC spending.
+  const approve = useCallback(
+    async (amount: string) => {
+      let parsedAmount: bigint;
 
-      await fn();
-      await refetchAll();
+      try {
+        parsedAmount = getAmount(amount);
+      } catch (amountError) {
+        setError(getErrorMessage(amountError));
+        setActionState("error");
+        return;
+      }
 
-      setActionState("success");
-    } catch (e) {
-      const message =
-        e instanceof Error ? e.message : "Transaction failed.";
+      await run(
+        "approving",
+        () =>
+          writeContractAsync({
+            address: tokenAddress,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [contractAddress, parsedAmount],
+            chainId: fuji.id,
+          }),
+        "Approve USDC thành công.",
+      );
+    },
+    [getAmount, run, writeContractAsync, tokenAddress, contractAddress],
+  );
 
-      setError(message);
-      setActionState("error");
-    }
-  }
+  // Deposit USDC.
+  const deposit = useCallback(
+    async (amount: string) => {
+      let parsedAmount: bigint;
 
-  async function approve(amount: string) {
-    await run("approving", async () => {
-      guard();
+      try {
+        parsedAmount = getAmount(amount);
 
-      const raw = parseUnits(amount, USDC_DECIMALS);
+        if (parsedAmount > balanceValue) {
+          throw new Error("Số dư USDC không đủ.");
+        }
 
-      const hash = await writeContractAsync({
-        address: USDC_CONTRACT as Address,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [STREAK_CONTRACT as Address, raw],
-      });
+        if (parsedAmount > allowanceValue) {
+          throw new Error("Allowance chưa đủ. Hãy approve USDC trước.");
+        }
+      } catch (amountError) {
+        setError(getErrorMessage(amountError));
+        setActionState("error");
+        return;
+      }
 
-      await wait(hash);
-    });
-  }
+      await run(
+        "depositing",
+        () =>
+          writeContractAsync({
+            address: contractAddress,
+            abi: streakSavingsAbi,
+            functionName: "deposit",
+            args: [parsedAmount],
+            chainId: fuji.id,
+          }),
+        "Deposit USDC thành công.",
+      );
+    },
+    [
+      getAmount,
+      balanceValue,
+      allowanceValue,
+      run,
+      writeContractAsync,
+      contractAddress,
+    ],
+  );
 
-  async function deposit(amount: string) {
-    await run("depositing", async () => {
-      guard();
+  // Claim the latest finalized epoch.
+  const claimReward = useCallback(async () => {
+    await run(
+      "claiming",
+      () =>
+        writeContractAsync({
+          address: contractAddress,
+          abi: streakSavingsAbi,
+          functionName: "claimReward",
+          args: [],
+          chainId: fuji.id,
+        }),
+      "Claim reward thành công.",
+    );
+  }, [run, writeContractAsync, contractAddress]);
 
-      const raw = parseUnits(amount, USDC_DECIMALS);
+  // Claim a specific finalized epoch.
+  const claimRewardFor = useCallback(
+    async (epoch: bigint) => {
+      await run(
+        "claiming",
+        () =>
+          writeContractAsync({
+            address: contractAddress,
+            abi: streakSavingsAbi,
+            functionName: "claimRewardFor",
+            args: [epoch],
+            chainId: fuji.id,
+          }),
+        `Claim reward epoch ${epoch.toString()} thành công.`,
+      );
+    },
+    [run, writeContractAsync, contractAddress],
+  );
 
-      const hash = await writeContractAsync({
-        address: STREAK_CONTRACT as Address,
-        abi: streakSavingsAbi,
-        functionName: "deposit",
-        args: [raw],
-      });
+  // Withdraw principal.
+  const withdraw = useCallback(
+    async (amount: string) => {
+      let parsedAmount: bigint;
 
-      await wait(hash);
-    });
-  }
+      try {
+        parsedAmount = getAmount(amount);
 
-  async function claimReward() {
-    await run("claiming", async () => {
-      guard();
+        if (parsedAmount > principalValue) {
+          throw new Error("Số tiền rút vượt quá principal hiện tại.");
+        }
+      } catch (amountError) {
+        setError(getErrorMessage(amountError));
+        setActionState("error");
+        return;
+      }
 
-      const hash = await writeContractAsync({
-        address: STREAK_CONTRACT as Address,
-        abi: streakSavingsAbi,
-        functionName: "claimReward",
-      });
+      await run(
+        "withdrawing",
+        () =>
+          writeContractAsync({
+            address: contractAddress,
+            abi: streakSavingsAbi,
+            functionName: "withdraw",
+            args: [parsedAmount],
+            chainId: fuji.id,
+          }),
+        "Withdraw USDC thành công.",
+      );
+    },
+    [
+      getAmount,
+      principalValue,
+      run,
+      writeContractAsync,
+      contractAddress,
+    ],
+  );
 
-      await wait(hash);
-    });
-  }
-
-  async function claimRewardFor(epoch: bigint) {
-    await run("claiming", async () => {
-      guard();
-
-      const hash = await writeContractAsync({
-        address: STREAK_CONTRACT as Address,
-        abi: streakSavingsAbi,
-        functionName: "claimRewardFor",
-        args: [epoch],
-      });
-
-      await wait(hash);
-    });
-  }
-
-  async function withdraw(amount: string) {
-    await run("withdrawing", async () => {
-      guard();
-
-      const raw = parseUnits(amount, USDC_DECIMALS);
-
-      const hash = await writeContractAsync({
-        address: STREAK_CONTRACT as Address,
-        abi: streakSavingsAbi,
-        functionName: "withdraw",
-        args: [raw],
-      });
-
-      await wait(hash);
-    });
-  }
-
-  const rawAllowance = allowance.data ?? 0n;
+  const totalClaimable = useMemo(
+    () => rewardEpochs.reduce((sum, item) => sum + item.amount, 0n),
+    [rewardEpochs],
+  );
 
   const values = useMemo(
     () => ({
-      principal: formatUsdc(principal.data),
-      streak: streak.data === undefined ? "—" : streak.data.toString(),
-      reward: formatUsdc(reward.data),
-      balance: formatUsdc(balance.data),
-      rawAllowance,
+      principal: formatUsdc(principalValue),
+      streak: streakValue.toString(),
+      reward: formatUsdc(rewardValue),
+      balance: formatUsdc(balanceValue),
+      epoch: epochValue.toString(),
+      epochCountdown: countdownValue.toString(),
     }),
-    [principal.data, streak.data, reward.data, balance.data, rawAllowance],
+    [
+      principalValue,
+      streakValue,
+      rewardValue,
+      balanceValue,
+      epochValue,
+      countdownValue,
+    ],
   );
 
-  const totalClaimable = rewardEpochs.reduce(
-    (total, item) => total + item.amount,
-    0n,
+  const raw = useMemo(
+    () => ({
+      principal: principalValue,
+      reward: rewardValue,
+      allowance: allowanceValue,
+      balance: balanceValue,
+      effectiveStreak: streakValue,
+      currentEpoch: epochValue,
+      secondsUntilNextEpoch: countdownValue,
+      totalClaimable,
+    }),
+    [
+      principalValue,
+      rewardValue,
+      allowanceValue,
+      balanceValue,
+      streakValue,
+      epochValue,
+      countdownValue,
+      totalClaimable,
+    ],
   );
 
   return {
-    configured: contractsConfigured,
+    configured,
     address,
+    isConnected,
+    correctChain,
+    busy,
     actionState,
     lastHash,
     error,
+    notice,
+
     values,
-    raw: {
-      principal: principal.data ?? 0n,
-      reward: reward.data ?? 0n,
-      allowance: rawAllowance,
-      totalClaimable,
-    },
+    raw,
+
     rewardEpochs,
     scanning,
     scanError,
-    hasOlderRewards: scanBefore !== null && scanBefore > 0n,
-    loadOlderRewards,
-    scanLatest,
+    hasOlderRewards,
+
     approve,
     deposit,
     claimReward,
     claimRewardFor,
     withdraw,
+
+    loadOlderRewards,
     refresh: refetchAll,
   };
 }

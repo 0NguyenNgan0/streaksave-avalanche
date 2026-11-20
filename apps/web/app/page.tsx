@@ -5,100 +5,65 @@ import { AppShell } from "@/components/app-shell";
 import { ContractStatus } from "@/components/contract-status";
 import { useStreakSave } from "@/hooks/use-streaksave";
 
-const preview = { streak: "7", principal: "125", reward: "3.42" };
+function Milestone({ label, unlocked }: { label: string; unlocked: boolean }) {
+  return (
+    <div className={`journey-step ${unlocked ? "is-unlocked" : ""}`}>
+      <div className="journey-dot">{unlocked ? "✓" : "🔒"}</div>
+      <strong>{label}</strong>
+      <span>{unlocked ? "Đã đạt" : "Chưa đạt"}</span>
+    </div>
+  );
+}
 
 export default function HomePage() {
-  const { values, address } = useStreakSave();
-  const data = address ? values : preview;
+  const { values, address, configured, correctChain } = useStreakSave();
+  // Do not present fake balances or hard-coded unlocked milestones as on-chain facts.
+  const data = address && configured && correctChain
+    ? values
+    : { streak: "—", principal: "—", reward: "—", epoch: "—", epochCountdown: "—" };
+  const streakNumber = data.streak === "—" ? 0 : Number(data.streak);
+  const active = streakNumber > 0;
 
   return (
     <AppShell>
-      <div className="stack">
-        <section className="hero-layout">
-          <div className="intro">
-            <div className="badge-line">🔺 Avalanche Team1 Vietnam · UniHack 2026</div>
-            <h1 className="h1">Tiết kiệm đều,<br/>nhận thưởng <span className="fun">vui!</span></h1>
-            <p className="subtle intro-copy">
-              Xây thói quen tiết kiệm cùng cộng đồng trên Avalanche. Duy trì streak càng lâu, mở khóa thêm cột mốc và nhận phần thưởng theo quy tắc minh bạch on-chain.
-            </p>
-            <div className="mascot-scene" aria-label="Friendly savings mascot illustration">
-              <div className="mascot"><div className="mascot-mouth"/><div className="mascot-logo">A</div></div>
-              <div className="jar"><div className="jar-coins"/></div>
-              <div style={{alignSelf:"center"}}>
-                <strong style={{fontSize:20}}>Mỗi tuần một chút 🌱</strong>
-                <div className="subtle" style={{marginTop:6}}>Không cần thật nhiều. Quan trọng là đều đặn.</div>
+      <div className="home-shell">
+        <section className="hero-clean">
+          <div className="hero-copy">
+            <h1>Tiết kiệm đều, duy trì streak,<br />nhận thưởng minh bạch.</h1>
+            <p>Xây dựng thói quen tiết kiệm trên Avalanche Fuji với cơ chế streak và reward minh bạch on-chain.</p>
+            <Link href="/deposit" className="primary-cta"><span className="cta-icon">◉</span><span>Tiết kiệm 5 USDC</span><span className="cta-arrow">→</span></Link>
+          </div>
+          <div className="hero-dashboard">
+            <section className="streak-summary-card">
+              <div className="streak-main">
+                <div className="summary-label"><span className="summary-icon">▣</span><span>Streak hiện tại</span></div>
+                <div className="streak-number">{data.streak} epoch</div>
+                <div className={`status-pill ${active ? "active" : "inactive"}`}><span>{active ? "✓" : "•"}</span><span>{active ? "Đang duy trì" : "Chưa có streak hoạt động"}</span></div>
               </div>
+              <div className="epoch-panel"><div className="epoch-row"><span className="epoch-icon">◇</span><strong>Epoch #{data.epoch}</strong></div><div className="epoch-row countdown"><span className="epoch-icon">◷</span><span>Còn <strong>{data.epochCountdown}</strong></span></div></div>
+            </section>
+            <div className="metric-grid">
+              <section className="metric-card"><div className="metric-icon green">◉</div><div><div className="metric-label">Tổng đã tiết kiệm</div><div className="metric-value">{data.principal} USDC</div></div></section>
+              <section className="metric-card"><div className="metric-icon violet">🎁</div><div><div className="metric-label">Phần thưởng có thể nhận</div><div className="metric-value">{data.reward} USDC</div></div></section>
             </div>
           </div>
-
-          <section className="card streak-card">
-            <div>
-              <div className="eyebrow">Streak hiện tại</div>
-              <div className="streak-value">{data.streak} ngày</div>
-              <div className="status-chip">🔥 Đang duy trì!</div>
-
-              <div className="stats">
-                <div className="stat">
-                  <div className="stat-icon">🪙</div>
-                  <div className="stat-label">Đã tiết kiệm</div>
-                  <div className="stat-value">{data.principal} USDC</div>
-                </div>
-                <div className="stat">
-                  <div className="stat-icon">🎁</div>
-                  <div className="stat-label">Phần thưởng có thể nhận</div>
-                  <div className="stat-value">{data.reward} USDC</div>
-                </div>
-              </div>
-              <Link href="/deposit" className="button cta" style={{display:"block",textAlign:"center"}}>Tiết kiệm 5 USDC ngay →</Link>
-            </div>
-            <div className="fire-illustration" aria-hidden="true">
-              <span className="spark s1">✦</span><span className="spark s2">✦</span><span className="spark s3">✦</span>
-              <div className="fire-orb">🔥</div>
-            </div>
-          </section>
         </section>
-
         <ContractStatus />
-
-        <section className="content-grid">
-          <div className="card journey">
-            <div>
-              <div className="eyebrow">Hành trình streak</div>
-              <h2 className="section-title">Cứ đều đặn, phần thưởng sẽ đến ✨</h2>
-            </div>
-            <div className="journey-track">
-              <div className="milestone done"><div className="milestone-dot">✓</div><span>4 ngày</span></div>
-              <div className="milestone current"><div className="milestone-dot">✓</div><span>7 ngày</span></div>
-              <div className="milestone"><div className="milestone-dot">14</div><span>14 ngày</span></div>
-              <div className="milestone"><div className="milestone-dot">30</div><span>30 ngày</span></div>
-            </div>
-            <div className="next-box">
-              <div><strong>🎁 Mốc tiếp theo</strong><div className="subtle">Huy hiệu 14 ngày</div></div>
-              <div style={{fontSize:34}}>🏅</div>
-            </div>
-          </div>
-
-          <div className="card fun-note">
-            <div className="eyebrow">Vì sao trên Avalanche?</div>
-            <h2 className="section-title">Web3 ở phía sau, trải nghiệm ở phía trước.</h2>
-            <div className="fun-list">
-              <div><span>✓</span><span>Phí giao dịch thấp, phù hợp khoản tiết kiệm nhỏ.</span></div>
-              <div><span>✓</span><span>Xác nhận nhanh trên Fuji testnet cho demo mượt.</span></div>
-              <div><span>✓</span><span>Quy tắc streak và reward minh bạch on-chain.</span></div>
-            </div>
+        <section className="journey-card">
+          <div className="journey-title"><span className="journey-title-icon">⚑</span><h2>Hành trình streak</h2></div>
+          <div className="journey-track"><div className="journey-line"><span className="journey-progress" /></div>
+            <Milestone label="4 epoch" unlocked={streakNumber >= 4} />
+            <Milestone label="7 epoch" unlocked={streakNumber >= 7} />
+            <Milestone label="14 epoch" unlocked={streakNumber >= 14} />
+            <Milestone label="30 epoch" unlocked={streakNumber >= 30} />
           </div>
         </section>
-
-        <section className="card">
-          <div className="row">
-            <div><div className="eyebrow">Bộ sưu tập huy hiệu</div><h2 className="section-title">Nhìn lại những cột mốc nhỏ mà vui 🥳</h2></div>
-            <span className="subtle">Duy trì streak để mở khóa</span>
-          </div>
-          <div className="badges">
-            <div className="badge-card"><div className="badge-medal">🔥</div><strong>4 ngày</strong><div className="subtle">Warm-up</div></div>
-            <div className="badge-card"><div className="badge-medal">⭐</div><strong>7 ngày</strong><div className="subtle">On a roll</div></div>
-            <div className="badge-card locked"><div className="badge-medal">🏅</div><strong>14 ngày</strong><div className="subtle">Locked</div></div>
-            <div className="badge-card locked"><div className="badge-medal">💎</div><strong>30 ngày</strong><div className="subtle">Locked</div></div>
+        <section className="avalanche-card">
+          <div className="avalanche-brand-block"><div className="ava-mark">A</div><div><div className="ava-kicker">Why Avalanche</div><div className="ava-sub">Fuji Testnet</div></div></div>
+          <div className="avalanche-benefits">
+            <div className="benefit"><div className="benefit-icon">◇</div><div><strong>Minh bạch on-chain</strong><span>Quy tắc smart contract có thể kiểm chứng</span></div></div>
+            <div className="benefit"><div className="benefit-icon">ϟ</div><div><strong>Giao dịch nhanh, phí thấp</strong><span>Phù hợp khoản tiết kiệm nhỏ</span></div></div>
+            <div className="benefit"><div className="benefit-icon">▱</div><div><strong>Mock yield rõ ràng</strong><span>Token thử nghiệm không có giá trị thực</span></div></div>
           </div>
         </section>
       </div>
