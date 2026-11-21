@@ -47,12 +47,37 @@ This result applies to the commits and detection rules covered by this Gitleaks 
 - Actual lockfile and installed direct package versions matched: wagmi 2.19.5, viem 2.57.19, @tanstack/react-query 5.107.1.
 - Code build/typecheck PASS does **not** resolve security findings.
 
+## Temporary Dependency Risk Acceptance — Avalanche UniHack 2026
+
+**Decision:** ACCEPTED WITH RESTRICTIONS — FUJI TESTNET MVP ONLY
+
+**Approved by team consensus (21 Nov 2026):**
+- Lê Trí Trọng — Smart Contracts & Deployment
+- Nguyễn Thanh Ngân — Frontend & UI/UX
+- Lương Thị Thu Huyền — Integration & QA
+
+**Scope:** 27 unresolved production dependency advisories
+(16 High, 11 Moderate).
+
+**Rationale:** A limited dependency update was tested. TypeScript
+and Next.js build passed, but the vulnerability count remained 27.
+The team chose to preserve the tested wallet integration for the
+hackathon demonstration.
+
+**Conditions:**
+- Avalanche Fuji Testnet and test-only assets only.
+- No claim of independent security audit or production readiness.
+- All 27 advisories remain unresolved.
+- Remediation and wallet regression testing required before
+  any real-asset deployment.
+
+**Residual risk:** Temporarily accepted, not eliminated.
 ## Before any public release
 
 - [x] Run Gitleaks Git-history scan and triage the detected finding (37 commits scanned; one false positive).
 - [ ] Confirm active collaborator permissions, branch protection behavior and no unintended admin bypass.
-- [ ] Document owner-approved disposition for 27 advisories; if fixing, do so on separate branch with ABI/typecheck/build and real wallet smoke regression.
+- [x] Team approved temporary acceptance of 27 unresolved dependency advisories for the Fuji Testnet MVP.
 - [ ] Verify deploy settings and Vercel environment contain **only public data** in `NEXT_PUBLIC_*`, and no private keys are exposed in client bundles.
 - [ ] Check public links, Incognito access, minimal wallet disclosure and testnet-only claims.
 
-**TS-23 status: PARTIAL — Gitleaks finding triaged; dependency risk disposition, access confirmation and final release sign-off remain pending.**
+**TS-23 status: PARTIAL — dependency risks accepted for Fuji-only demo; remaining release and access checks still require sign-off.**

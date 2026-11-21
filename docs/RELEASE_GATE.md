@@ -16,7 +16,7 @@
 | Full TS-19 sign-off | PENDING | See `docs/TS-19-EVIDENCE.md` for gaps |
 | GitHub access | Checked | Repo PUBLIC, 3 collaborators; verify identities and external Incognito view |
 | `main` protection | Configured | PR required, one approval, last-push approval, force-push and deletion disabled; **admin enforcement disabled** |
-| Dependency audit | OPEN RISK | `npm audit --omit=dev`: 27 findings (16 high, 11 moderate), not remediated; attempted `npm audit fix --dry-run` blocked by `ERESOLVE` |
+| Dependency audit | RISK ACCEPTED — TESTNET ONLY | 27 unresolved advisories (16 High, 11 Moderate). Lê Trí Trọng, Nguyễn Thanh Ngân and Lương Thị Thu Huyền agreed to temporary acceptance for the Fuji MVP on 21 Nov 2026. No security fixes were applied. |
 | Git history secret scan | PENDING | Lightweight current-tree scan only; no full-history scan evidenced |
 | Live frontend | PENDING | No verified Vercel URL and no Incognito smoke result |
 | Release to `main` | PENDING | `main` remains initial starter at last check; PR `dev` → `main` with review required |
@@ -29,7 +29,7 @@ The operator-reported production dependency audit listed `decode-uri-component` 
 ## Release decision checklist
 
 - [ ] C/A confirm required E2E evidence and accepted residual QA gaps; attach receipts / reviewer note.
-- [ ] A/C decide whether unresolved 16 High and 11 Moderate advisory findings are acceptable for a **testnet-only hackathon demo**; record risk acceptance or fix on isolated branch and rerun all gates.
+- [x] Team accepted the unresolved 16 High and 11 Moderate advisories for the Fuji-only hackathon demo; see the security review for restrictions and follow-up.
 - [ ] Confirm no secrets in current tree/history and repo access/branch protection.
 - [ ] Provide verified public live app URL, check Fuji connection and Incognito access.
 - [ ] Update README and submission URLs after Vercel release.
