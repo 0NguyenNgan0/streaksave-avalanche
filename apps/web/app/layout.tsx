@@ -4,8 +4,9 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: "StreakSave Â· Avalanche UniHack 2026",
-  description: "Tiáº¿t kiá»‡m Ä‘á»u, giá»¯ streak, nháº­n thÆ°á»Ÿng vui trÃªn Avalanche.",
+  title: "StreakSave | Avalanche UniHack 2026",
+  description:
+    "Xây dựng thói quen tiết kiệm, duy trì streak và nhận phần thưởng minh bạch trên Avalanche Fuji.",
 };
 
 const inter = Inter({
