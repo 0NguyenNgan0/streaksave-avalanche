@@ -9,7 +9,7 @@ StreakSave is a behavioral-savings MVP built for **Avalanche UniHack 2026**. On 
 - Implemented: wallet connection (injected Core Wallet/MetaMask), Dashboard, Deposit, Rewards, Withdraw, Fuji network switch, USDC approval, on-chain reads/writes, transaction feedback.
 - Implemented in Solidity: test token, principal accounting, configurable epoch clock, check-in streak, per-epoch weight snapshots, provider-funded mock rewards and claims.
 - The frontend and shared ABI compatibility checks, TypeScript typecheck, and Next.js production build passed locally on the integration branch (reported 19 Nov 2026). Contract GitHub Actions CI reported success on the integration branch; verify the exact release SHA before final sign-off. **Those results are not a full Fuji E2E pass.**
-- **Fuji deployment and read-only calls verified; signed E2E transaction evidence and a verified public frontend URL are still pending.** See [`docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md`](docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md) and [`docs/TS-19-EVIDENCE.md`](docs/TS-19-EVIDENCE.md).
+- **Fuji deployment and read-only calls verified. Member C reports four functional E2E cases and four edge cases PASS on 21 Nov; transaction receipts, full TS-19 matrix and public frontend URL remain pending release evidence.** See [`docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md`](docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md) and [`docs/TS-19-EVIDENCE.md`](docs/TS-19-EVIDENCE.md).
 
 ## MVP flow
 
@@ -128,7 +128,7 @@ See [`.github/workflows/contracts.yml`](.github/workflows/contracts.yml) for CI.
 - **Initial mint:** 1,000 test MockUSDC according to the deployment record; read-only balance at deployer was 1,000 at test time.
 - **Live frontend URL:** **NOT YET VERIFIED**.
 
-Deployment hashes: [`contracts/FUJI_DEPLOYMENT_RECORD.txt`](contracts/FUJI_DEPLOYMENT_RECORD.txt). CLI evidence: [`docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md`](docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md). **No signed Fuji end-to-end user transaction flow has been verified.** Never put private keys or recovery phrases in the repository.
+Deployment hashes: [`contracts/FUJI_DEPLOYMENT_RECORD.txt`](contracts/FUJI_DEPLOYMENT_RECORD.txt). CLI evidence: [`docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md`](docs/FUJI_TERMINAL_EVIDENCE_2026-11-19.md). **Member C reports successful Fuji wallet transactions in `docs/QA_REPORT.md`, but the report does not include transaction hashes and full TS-19 sign-off is pending.** Never put private keys or recovery phrases in the repository.
 
 ## TS-19: Fresh wallet E2E and QA
 
@@ -152,4 +152,13 @@ Follow the executable testing protocol in [`docs/TS-19-FRESH-WALLET-QA.md`](docs
 - [Submission checklist](docs/SUBMISSION_CHECKLIST.md)
 - [Contract security review](docs/SMART-CONTRACT-SECURITY-REVIEW.md)
 
-**Team Dimple Â· Avalanche UniHack 2026**
+## Team
+
+**Team Dimple — Avalanche UniHack 2026**
+
+
+| Member | Full Name | Role |
+|---|---|---|
+| Member A | Lê Trí Trọng | Smart Contracts & Avalanche Fuji Deployment |
+| Member B | Nguyễn Thanh Ngân | Frontend Development & UI/UX |
+| Member C | Lương Thị Thu Huyền | Integration, Quality Assurance & Release |
