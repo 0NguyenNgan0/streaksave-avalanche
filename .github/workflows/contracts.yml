@@ -1,0 +1,47 @@
+name: Contracts CI
+
+on:
+  push:
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts.yml"
+  pull_request:
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts.yml"
+
+jobs:
+  foundry:
+    name: Foundry Build, Format & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install OpenZeppelin Contracts
+        run: npm ci
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Check Solidity formatting
+        run: forge fmt --check
+
+      - name: Build contracts and inspect sizes
+        run: forge build --sizes
+
+      - name: Run full test suite
+        run: forge test -vvv
